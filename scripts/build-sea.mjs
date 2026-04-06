@@ -53,7 +53,7 @@ if (!execArgv.includes("--experimental-sqlite") && env.MEMOVYN_SQLITE_BOOTSTRAPP
   exit(typeof result.status === "number" ? result.status : 1);
 }
 
-const source = sea.getAsset("cli.cjs", "utf8");
+const source = sea.getAsset("cli.cjs", "utf8").replace(/^#!.*\\r?\\n/, "");
 const moduleRef = { exports: {} };
 const runner = new Function(
   "require",
