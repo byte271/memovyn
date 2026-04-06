@@ -104,6 +104,14 @@ runner(require, moduleRef, moduleRef.exports, "memovyn-cli.cjs", ".");
 
   copyFileSync(process.execPath, releaseBinary);
 
+  if (platform === "darwin") {
+    console.log("Removing existing macOS code signature before SEA injection...");
+    execFileSync("codesign", ["--remove-signature", releaseBinary], {
+      stdio: "inherit",
+      cwd: root
+    });
+  }
+
   execFileSync(
     postjectBinary,
     [
@@ -117,7 +125,13 @@ runner(require, moduleRef, moduleRef.exports, "memovyn-cli.cjs", ".");
   );
 
   if (platform === "darwin") {
+    console.log("Re-signing macOS SEA binary after injection...");
     execFileSync("codesign", ["--sign", "-", "--force", releaseBinary], {
+      stdio: "inherit",
+      cwd: root
+    });
+    console.log("Verifying macOS SEA binary signature...");
+    execFileSync("codesign", ["--verify", "--deep", "--strict", releaseBinary], {
       stdio: "inherit",
       cwd: root
     });
