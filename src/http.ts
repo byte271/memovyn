@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import type { Memovyn } from "./app.ts";
 import { handleMcpRequest } from "./mcp.ts";
 
@@ -271,19 +272,17 @@ function escapeAttribute(input: string): string {
 
 function loadTextAsset(name: string, fallbackUrl: URL): string {
   try {
-    const dynamicRequire = (0, eval)("require") as ((id: string) => any) | undefined;
-    if (typeof dynamicRequire === "function") {
-      try {
-        const sea = dynamicRequire("node:sea") as {
-          isSea?: () => boolean;
-          getAsset?: (key: string, encoding?: string) => string;
-        };
-        if (sea?.isSea?.() && sea.getAsset) {
-          return sea.getAsset(`static/${name}`, "utf8");
-        }
-      } catch {
-        // fall back to filesystem below
+    try {
+      const require = createRequire(import.meta.url);
+      const sea = require("node:sea") as {
+        isSea?: () => boolean;
+        getAsset?: (key: string, encoding?: string) => string;
+      };
+      if (sea?.isSea?.() && sea.getAsset) {
+        return sea.getAsset(`static/${name}`, "utf8");
       }
+    } catch {
+      // fall back to filesystem below
     }
     return readFileSync(fallbackUrl, "utf8");
   } catch (error) {
