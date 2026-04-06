@@ -29,11 +29,11 @@
     "LICENSE"
   ],
   "scripts": {
-    "dev": "node --experimental-strip-types src/cli.ts",
+    "dev": "tsx src/cli.ts",
     "start": "node dist/cli.mjs serve --bind 127.0.0.1:7761",
     "typecheck": "tsc --noEmit",
     "build": "tsup --config tsup.config.ts",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "package:bundle": "node scripts/build-release-bundle.mjs",
     "package:sea": "node -e \"console.log('SEA packaging is disabled on Node 20. Use npm run package:bundle instead.')\"",
     "release:check": "npm run typecheck && npm run test && npm run build"
@@ -43,6 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "20.17.50",
+    "tsx": "^4.19.2",
     "tsup": "^8.2.4",
     "typescript": "^5.8.3"
   }

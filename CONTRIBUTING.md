@@ -33,7 +33,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package:bundle
-node --experimental-strip-types src/cli.ts serve --bind 127.0.0.1:7761
+npx tsx src/cli.ts serve --bind 127.0.0.1:7761
 ```
 
 Optional Ollama setup:
@@ -65,14 +65,14 @@ npm test
 
 Recommended manual checks:
 ```bash
-node --experimental-strip-types src/cli.ts add demo "We chose SQLite and BM25."
-node --experimental-strip-types src/cli.ts search demo sqlite --limit 5
-node --experimental-strip-types src/cli.ts analytics demo --markdown
+npx tsx src/cli.ts add demo "We chose SQLite and BM25."
+npx tsx src/cli.ts search demo sqlite --limit 5
+npx tsx src/cli.ts analytics demo --markdown
 ```
 
 Large-scale benchmark:
 ```bash
-node --experimental-strip-types src/cli.ts benchmark memovyn-dev --memories 5000 --query "shared brain regression sqlite mcp"
+npx tsx src/cli.ts benchmark memovyn-dev --memories 5000 --query "shared brain regression sqlite mcp"
 ```
 
 ## Performance Expectations

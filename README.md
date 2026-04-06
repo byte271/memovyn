@@ -166,42 +166,42 @@ Supported values:
 
 Add a memory:
 ```bash
-node --experimental-strip-types src/cli.ts add memovyn-core "We chose SQLite WAL mode and BM25 retrieval for project memory search."
+npx tsx src/cli.ts add memovyn-core "We chose SQLite WAL mode and BM25 retrieval for project memory search."
 ```
 
 Search memories:
 ```bash
-node --experimental-strip-types src/cli.ts search memovyn-core "sqlite retrieval" --limit 5
+npx tsx src/cli.ts search memovyn-core "sqlite retrieval" --limit 5
 ```
 
 Get ready-to-inject project context:
 ```bash
-node --experimental-strip-types src/cli.ts context memovyn-core
+npx tsx src/cli.ts context memovyn-core
 ```
 
 Reflect on a result:
 ```bash
-node --experimental-strip-types src/cli.ts reflect memovyn-core "Regression came from forgetting to update the postings index after insert." --outcome regression
+npx tsx src/cli.ts reflect memovyn-core "Regression came from forgetting to update the postings index after insert." --outcome regression
 ```
 
 Apply explicit feedback:
 ```bash
-node --experimental-strip-types src/cli.ts feedback 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe --outcome success --weight 1.25
+npx tsx src/cli.ts feedback 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe --outcome success --weight 1.25
 ```
 
 Inspect a memory:
 ```bash
-node --experimental-strip-types src/cli.ts inspect 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
+npx tsx src/cli.ts inspect 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
 ```
 
 Archive a low-value memory:
 ```bash
-node --experimental-strip-types src/cli.ts archive 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
+npx tsx src/cli.ts archive 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
 ```
 
 Generate a Project Memory Health Report:
 ```bash
-node --experimental-strip-types src/cli.ts analytics memovyn-core --markdown
+npx tsx src/cli.ts analytics memovyn-core --markdown
 ```
 
 ## MCP Bindings
@@ -245,7 +245,7 @@ Use [examples/codex.mcp.json](/D:/memovyn/examples/codex.mcp.json).
 
 Run:
 ```bash
-node --experimental-strip-types src/cli.ts serve --bind 127.0.0.1:7761
+npx tsx src/cli.ts serve --bind 127.0.0.1:7761
 ```
 
 Endpoints:
