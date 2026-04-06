@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import { argv, stdin, stdout } from "node:process";
+import { spawnSync } from "node:child_process";
+import { argv, env, execArgv, execPath, exit, stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 
-import { Memovyn } from "./app.ts";
 import { ensureConfig, loadConfig } from "./config.ts";
-import { serveHttp } from "./http.ts";
-import { handleMcpRequest } from "./mcp.ts";
+
+ensureExperimentalSqlite();
 
 async function main(): Promise<void> {
+  const [{ Memovyn }, { serveHttp }, { handleMcpRequest }] = await Promise.all([
+    import("./app.ts"),
+    import("./http.ts"),
+    import("./mcp.ts")
+  ]);
   const config = loadConfig();
   ensureConfig(config);
   const app = new Memovyn(config);
@@ -102,13 +106,45 @@ async function main(): Promise<void> {
   }
 }
 
-async function serveMcpStdio(app: Memovyn): Promise<void> {
+async function serveMcpStdio(app: Awaited<ReturnType<typeof loadRuntimeApp>>): Promise<void> {
+  const { handleMcpRequest } = await import("./mcp.ts");
   const rl = createInterface({ input: stdin, output: stdout, terminal: false });
   for await (const line of rl) {
     if (!line.trim()) continue;
     const request = JSON.parse(line);
     stdout.write(`${JSON.stringify(await handleMcpRequest(app, request))}\n`);
   }
+}
+
+function ensureExperimentalSqlite(): void {
+  if (execArgv.includes("--experimental-sqlite") || env.MEMOVYN_SQLITE_BOOTSTRAPPED === "1") {
+    return;
+  }
+
+  const result = spawnSync(
+    execPath,
+    ["--experimental-sqlite", ...execArgv, ...argv.slice(1)],
+    {
+      stdio: "inherit",
+      env: {
+        ...env,
+        MEMOVYN_SQLITE_BOOTSTRAPPED: "1"
+      }
+    }
+  );
+
+  if (typeof result.status === "number") {
+    exit(result.status);
+  }
+  exit(1);
+}
+
+type RuntimeAppModule = typeof import("./app.ts");
+async function loadRuntimeApp(): Promise<InstanceType<RuntimeAppModule["Memovyn"]>> {
+  const { Memovyn } = await import("./app.ts");
+  const config = loadConfig();
+  ensureConfig(config);
+  return new Memovyn(config);
 }
 
 function readFlag(args: string[], flag: string): string | undefined {
