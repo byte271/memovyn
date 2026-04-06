@@ -1,0 +1,9 @@
+services:
+  memovyn:
+    build: .
+    ports:
+      - "7761:7761"
+    environment:
+      MEMOVYN_DATA_DIR: /data
+    volumes:
+      - ./.memovyn:/data

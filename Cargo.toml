@@ -1,0 +1,27 @@
+[package]
+name = "memovyn"
+version = "0.1.0"
+edition = "2024"
+description = "Memovyn: local-first permanent memory for MCP-native coding agents"
+license = "MIT"
+repository = "https://github.com/example/memovyn"
+
+[dependencies]
+aho-corasick = "1"
+anyhow = "1"
+axum = { version = "0.8", features = ["json", "macros", "http2"] }
+blake3 = "1"
+clap = { version = "4.5", features = ["derive", "env"] }
+petgraph = "0.8"
+regex = "1"
+rusqlite = { version = "0.33", features = ["bundled", "backup", "modern_sqlite"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smallvec = { version = "1", features = ["serde"] }
+thiserror = "2"
+time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "io-std", "io-util"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["serde", "v7"] }

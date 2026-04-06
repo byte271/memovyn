@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "memovyn": {
+      "command": "memovyn",
+      "args": ["mcp-stdio"],
+      "env": {
+        "MEMOVYN_DATA_DIR": ".memovyn"
+      }
+    }
+  }
+}
