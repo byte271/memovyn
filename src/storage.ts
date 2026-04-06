@@ -1,7 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { createRequire } from "node:module";
-
 import type {
   AnalyticsBucket,
   AnalyticsSnapshot,
@@ -612,10 +610,13 @@ function ensureProjectRow(db: any, projectId: string, shareScope: boolean): void
 }
 
 function createDatabase(databasePath: string): any | null {
+  if (process.env.MEMOVYN_DISABLE_SQLITE === "1") {
+    return null;
+  }
   try {
-    const require = createRequire(import.meta.url);
-    const sqliteModuleName = `node:${["sql", "ite"].join("")}`;
-    const sqlite = require(sqliteModuleName) as { DatabaseSync: new (path: string) => any };
+    const dynamicRequire = (0, eval)("require") as (id: string) => { DatabaseSync: new (path: string) => any };
+    const sqliteModuleName = `node:${"sql"}ite`;
+    const sqlite = dynamicRequire(sqliteModuleName);
     return new sqlite.DatabaseSync(databasePath);
   } catch {
     return null;

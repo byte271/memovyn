@@ -38,19 +38,28 @@ const sea = require("node:sea");
 const { spawnSync } = require("node:child_process");
 const { execArgv, execPath, argv, env, exit } = require("node:process");
 
-if (!execArgv.includes("--experimental-sqlite") && env.MEMOVYN_SQLITE_BOOTSTRAPPED !== "1") {
-  const result = spawnSync(
-    execPath,
-    ["--experimental-sqlite", ...argv.slice(1)],
-    {
-      stdio: "inherit",
-      env: {
-        ...env,
-        MEMOVYN_SQLITE_BOOTSTRAPPED: "1"
-      }
+function hasSqlite() {
+  try {
+    require("node:" + "sqlite");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (!hasSqlite() && env.MEMOVYN_SQLITE_BOOTSTRAPPED !== "1") {
+  const result = spawnSync(execPath, ["--experimental-sqlite", ...argv.slice(1)], {
+    stdio: "inherit",
+    env: {
+      ...env,
+      MEMOVYN_SQLITE_BOOTSTRAPPED: "1"
     }
-  );
+  });
   exit(typeof result.status === "number" ? result.status : 1);
+}
+
+if (!hasSqlite()) {
+  env.MEMOVYN_DISABLE_SQLITE = "1";
 }
 
 const source = sea.getAsset("cli.cjs", "utf8").replace(/^#!.*\\r?\\n/, "");
