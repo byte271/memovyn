@@ -86,7 +86,9 @@ writeFileSync(
       output: "./sea-prep.blob",
       disableExperimentalSEAWarning: true,
       assets: {
-        "cli.cjs": "./dist/cli.cjs"
+        "cli.cjs": "./dist/cli.cjs",
+        "static/app.css": "./static/app.css",
+        "static/app.js": "./static/app.js"
       }
     },
     null,

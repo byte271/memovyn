@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import type { Memovyn } from "./app.ts";
 import { handleMcpRequest } from "./mcp.ts";
 
-const appCss = readFileSync(new URL("../static/app.css", import.meta.url), "utf8");
-const appJs = readFileSync(new URL("../static/app.js", import.meta.url), "utf8");
+const appCss = loadTextAsset("app.css", new URL("../static/app.css", import.meta.url));
+const appJs = loadTextAsset("app.js", new URL("../static/app.js", import.meta.url));
 
 export async function serveHttp(app: Memovyn, bind: string): Promise<void> {
   const [host, portText] = bind.split(":");
@@ -267,4 +267,28 @@ function escapeHtml(input: string): string {
 
 function escapeAttribute(input: string): string {
   return escapeHtml(input).replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
+function loadTextAsset(name: string, fallbackUrl: URL): string {
+  try {
+    const dynamicRequire = (0, eval)("require") as ((id: string) => any) | undefined;
+    if (typeof dynamicRequire === "function") {
+      try {
+        const sea = dynamicRequire("node:sea") as {
+          isSea?: () => boolean;
+          getAsset?: (key: string, encoding?: string) => string;
+        };
+        if (sea?.isSea?.() && sea.getAsset) {
+          return sea.getAsset(`static/${name}`, "utf8");
+        }
+      } catch {
+        // fall back to filesystem below
+      }
+    }
+    return readFileSync(fallbackUrl, "utf8");
+  } catch (error) {
+    throw new Error(
+      `Failed to load static asset ${name}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
