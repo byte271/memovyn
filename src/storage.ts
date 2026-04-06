@@ -1,6 +1,6 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
 
 import type {
   AnalyticsBucket,
@@ -11,13 +11,42 @@ import type {
   RankedMemoryStat
 } from "./types.ts";
 
+type JsonProjectState = {
+  createdAt: string;
+  updatedAt: string;
+  shareScope: boolean;
+  totalQueries: number;
+  totalTokenSavings: number;
+};
+
+type JsonState = {
+  projects: Record<string, JsonProjectState>;
+  memories: MemoryRecord[];
+  memoryVersions: Record<string, MemoryVersionSnapshot[]>;
+  recollections: { memoryId: string; query: string; recalledAt: string; tokensSaved: number }[];
+  feedbackEvents: {
+    memoryId: string;
+    projectId: string;
+    outcome: FeedbackOutcome;
+    repeatedMistake: boolean;
+    weight: number;
+    note?: string;
+    createdAt: string;
+  }[];
+};
+
 export class Storage {
-  readonly db: DatabaseSync;
+  readonly db: any | null;
+  readonly stateFile: string;
+  private state: JsonState;
 
   constructor(databasePath: string) {
     mkdirSync(dirname(databasePath), { recursive: true });
-    this.db = new DatabaseSync(databasePath);
-    this.db.exec(`
+    this.stateFile = `${databasePath}.json`;
+    this.db = createDatabase(databasePath);
+    this.state = this.db ? createEmptyState() : loadJsonState(this.stateFile);
+    if (this.db) {
+      this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
       PRAGMA temp_store = MEMORY;
@@ -67,11 +96,28 @@ export class Storage {
         created_at TEXT NOT NULL
       );
     `);
-    ensureMemoryJsonColumn(this.db);
+      ensureMemoryJsonColumn(this.db);
+    }
   }
 
   upsertProject(projectId: string, shareScope: boolean): void {
     const now = nowIso();
+    if (!this.db) {
+      const current = this.state.projects[projectId] ?? {
+        createdAt: now,
+        updatedAt: now,
+        shareScope,
+        totalQueries: 0,
+        totalTokenSavings: 0
+      };
+      this.state.projects[projectId] = {
+        ...current,
+        updatedAt: now,
+        shareScope
+      };
+      this.flushState();
+      return;
+    }
     this.db
       .prepare(
         `INSERT INTO projects(project_id, created_at, updated_at, share_scope)
@@ -82,6 +128,18 @@ export class Storage {
   }
 
   insertMemory(memory: MemoryRecord): void {
+    if (!this.db) {
+      const index = this.state.memories.findIndex((candidate) => candidate.id === memory.id);
+      if (index >= 0) {
+        this.state.memories[index] = memory;
+      } else {
+        this.state.memories.push(memory);
+      }
+      this.insertVersion(memory);
+      this.flushState();
+      return;
+    }
+    ensureProjectRow(this.db, memory.projectId, memory.metadata.shareScope);
     this.db
       .prepare(
         `INSERT OR REPLACE INTO memories(memory_id, project_id, record_json, created_at, updated_at, access_count)
@@ -99,6 +157,18 @@ export class Storage {
   }
 
   updateMemory(memory: MemoryRecord): void {
+    if (!this.db) {
+      const index = this.state.memories.findIndex((candidate) => candidate.id === memory.id);
+      if (index >= 0) {
+        this.state.memories[index] = memory;
+      } else {
+        this.state.memories.push(memory);
+      }
+      this.insertVersion(memory);
+      this.flushState();
+      return;
+    }
+    ensureProjectRow(this.db, memory.projectId, memory.metadata.shareScope);
     this.db
       .prepare(
         `UPDATE memories
@@ -110,6 +180,18 @@ export class Storage {
   }
 
   private insertVersion(memory: MemoryRecord): void {
+    if (!this.db) {
+      const bucket = this.state.memoryVersions[memory.id] ?? [];
+      bucket.push({
+        version: memory.version,
+        createdAt: memory.updatedAt,
+        headline: memory.headline,
+        reinforcement: memory.reinforcement,
+        penalty: memory.penalty
+      });
+      this.state.memoryVersions[memory.id] = bucket;
+      return;
+    }
     this.db
       .prepare(
         `INSERT OR REPLACE INTO memory_versions(memory_id, version, snapshot_json, created_at)
@@ -119,6 +201,9 @@ export class Storage {
   }
 
   loadAllMemories(): MemoryRecord[] {
+    if (!this.db) {
+      return [...this.state.memories];
+    }
     const rows = this.db.prepare(`SELECT * FROM memories ORDER BY created_at ASC`).all() as Record<string, unknown>[];
     return rows
       .map((row) => hydrateRecord(this.db, row))
@@ -126,6 +211,9 @@ export class Storage {
   }
 
   getMemory(memoryId: string): MemoryRecord | undefined {
+    if (!this.db) {
+      return this.state.memories.find((memory) => memory.id === memoryId);
+    }
     const row = this.db
       .prepare(`SELECT * FROM memories WHERE memory_id = ?`)
       .get(memoryId) as Record<string, unknown> | undefined;
@@ -133,6 +221,9 @@ export class Storage {
   }
 
   memoryVersions(memoryId: string): MemoryVersionSnapshot[] {
+    if (!this.db) {
+      return this.state.memoryVersions[memoryId] ?? [];
+    }
     const rows = this.db
       .prepare(`SELECT snapshot_json FROM memory_versions WHERE memory_id = ? ORDER BY version ASC`)
       .all(memoryId) as { snapshot_json: string }[];
@@ -155,6 +246,22 @@ export class Storage {
     memory.accessCount += 1;
     memory.lastAccessedAt = now;
     this.updateMemory(memory);
+    if (!this.db) {
+      this.state.recollections.push({
+        memoryId,
+        query,
+        recalledAt: now,
+        tokensSaved
+      });
+      const project = this.state.projects[memory.projectId];
+      if (project) {
+        project.totalQueries += 1;
+        project.totalTokenSavings += tokensSaved;
+        project.updatedAt = now;
+      }
+      this.flushState();
+      return;
+    }
     this.db
       .prepare(`INSERT INTO recollections(memory_id, query, recalled_at, tokens_saved) VALUES (?, ?, ?, ?)`)
       .run(memoryId, query, now, tokensSaved);
@@ -174,6 +281,19 @@ export class Storage {
   ): void {
     const memory = this.getMemory(memoryId);
     if (!memory) return;
+    if (!this.db) {
+      this.state.feedbackEvents.push({
+        memoryId: memory.id,
+        projectId: memory.projectId,
+        outcome,
+        repeatedMistake,
+        weight,
+        note,
+        createdAt: nowIso()
+      });
+      this.flushState();
+      return;
+    }
     this.db
       .prepare(
         `INSERT INTO feedback_events(memory_id, project_id, outcome, repeated_mistake, weight, note, created_at)
@@ -191,6 +311,20 @@ export class Storage {
   }
 
   listProjects(): { projectId: string; memoryCount: number; lastUpdatedAt?: string; shareScope: boolean; totalTokenSavings: number; conflictCount: number }[] {
+    if (!this.db) {
+      return Object.entries(this.state.projects).map(([projectId, project]) => ({
+        projectId,
+        memoryCount: this.state.memories.filter((memory) => memory.projectId === projectId).length,
+        lastUpdatedAt: project.updatedAt,
+        shareScope: project.shareScope,
+        totalTokenSavings: project.totalTokenSavings,
+        conflictCount: this.state.memories.filter(
+          (memory) =>
+            memory.projectId === projectId &&
+            (memory.learning.conflictScore > 0 || memory.penalty > memory.reinforcement)
+        ).length
+      }));
+    }
     const rows = this.db
       .prepare(
         `SELECT p.project_id, p.share_scope, p.total_token_savings, MAX(m.updated_at) AS last_updated_at, COUNT(m.memory_id) AS memory_count
@@ -206,17 +340,29 @@ export class Storage {
       memory_count: number;
     }[];
 
+    const conflictsByProject = new Map<string, number>();
+    for (const memory of this.loadAllMemories()) {
+      if (memory.learning.conflictScore > 0 || memory.penalty > memory.reinforcement) {
+        conflictsByProject.set(memory.projectId, (conflictsByProject.get(memory.projectId) ?? 0) + 1);
+      }
+    }
+
     return rows.map((row) => ({
       projectId: row.project_id,
       memoryCount: Number(row.memory_count),
       lastUpdatedAt: row.last_updated_at,
       shareScope: Boolean(row.share_scope),
       totalTokenSavings: Number(row.total_token_savings),
-      conflictCount: 0
+      conflictCount: conflictsByProject.get(row.project_id) ?? 0
     }));
   }
 
   listSharedProjects(excludeProjectId: string): string[] {
+    if (!this.db) {
+      return Object.entries(this.state.projects)
+        .filter(([projectId, project]) => projectId !== excludeProjectId && project.shareScope)
+        .map(([projectId]) => projectId);
+    }
     const rows = this.db
       .prepare(`SELECT project_id FROM projects WHERE share_scope = 1 AND project_id != ? ORDER BY project_id ASC`)
       .all(excludeProjectId) as { project_id: string }[];
@@ -225,20 +371,24 @@ export class Storage {
 
   analytics(projectId: string): AnalyticsSnapshot {
     const memories = this.loadAllMemories().filter((memory) => memory.projectId === projectId);
-    const totalQueries = Number(
-      (
-        this.db.prepare(`SELECT total_queries FROM projects WHERE project_id = ?`).get(projectId) as {
-          total_queries?: number;
-        } | undefined
-      )?.total_queries ?? 0
-    );
-    const totalTokenSavings = Number(
-      (
-        this.db.prepare(`SELECT total_token_savings FROM projects WHERE project_id = ?`).get(projectId) as {
-          total_token_savings?: number;
-        } | undefined
-      )?.total_token_savings ?? 0
-    );
+    const totalQueries = !this.db
+      ? (this.state.projects[projectId]?.totalQueries ?? 0)
+      : Number(
+          (
+            this.db.prepare(`SELECT total_queries FROM projects WHERE project_id = ?`).get(projectId) as {
+              total_queries?: number;
+            } | undefined
+          )?.total_queries ?? 0
+        );
+    const totalTokenSavings = !this.db
+      ? (this.state.projects[projectId]?.totalTokenSavings ?? 0)
+      : Number(
+          (
+            this.db.prepare(`SELECT total_token_savings FROM projects WHERE project_id = ?`).get(projectId) as {
+              total_token_savings?: number;
+            } | undefined
+          )?.total_token_savings ?? 0
+        );
 
     return {
       projectId,
@@ -267,13 +417,66 @@ export class Storage {
       ),
       labelHotspots: [],
       relationHotspots: [],
-      conflictHeatmap: [],
+      conflictHeatmap: this.db ? loadConflictHeatmap(this.db, projectId) : loadConflictHeatmapFromState(this.state, projectId),
       growth: bucketMemories(memories),
-      evolutionTrend: [],
-      agentEvolutionTimeline: [],
+      evolutionTrend: this.db ? loadEvolutionTrend(this.db, projectId) : loadEvolutionTrendFromState(this.state, projectId),
+      agentEvolutionTimeline: this.db ? loadEvolutionTrend(this.db, projectId) : loadEvolutionTrendFromState(this.state, projectId),
       behaviorInsights: [],
       proactiveSuggestions: []
     };
+  }
+
+  projectActivity(projectId: string): { memoryCount: number; totalQueries: number } {
+    if (!this.db) {
+      return {
+        memoryCount: this.state.memories.filter((memory) => memory.projectId === projectId).length,
+        totalQueries: this.state.projects[projectId]?.totalQueries ?? 0
+      };
+    }
+    return {
+      memoryCount: this.loadAllMemories().filter((memory) => memory.projectId === projectId).length,
+      totalQueries: Number(
+        (
+          this.db.prepare(`SELECT total_queries FROM projects WHERE project_id = ?`).get(projectId) as {
+            total_queries?: number;
+          } | undefined
+        )?.total_queries ?? 0
+      )
+    };
+  }
+
+  archiveLowValueMemories(projectId: string, limit: number): MemoryRecord[] {
+    const memories = this.loadAllMemories()
+      .filter((memory) => memory.projectId === projectId)
+      .filter(
+        (memory) =>
+          memory.accessCount <= 1 &&
+          memory.reinforcement <= 0.2 &&
+          memory.learning.successScore <= 0.25 &&
+          memory.learning.conflictScore <= 0 &&
+          memory.penalty <= 0.15 &&
+          !memory.learning.lastFeedbackAt &&
+          !memory.metadata.extra.archived
+      )
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(0, limit);
+
+    for (const memory of memories) {
+      memory.metadata.extra.archived = "true";
+      memory.metadata.extra.archive_reason = "low_value";
+      memory.updatedAt = nowIso();
+      memory.version += 1;
+      this.updateMemory(memory);
+    }
+    if (!this.db) {
+      this.flushState();
+    }
+    return memories;
+  }
+
+  private flushState(): void {
+    if (this.db) return;
+    writeFileSync(this.stateFile, JSON.stringify(this.state, null, 2));
   }
 }
 
@@ -309,18 +512,144 @@ function bucketMemories(memories: MemoryRecord[]): AnalyticsBucket[] {
   return [...byDate.values()].sort((left, right) => left.bucket.localeCompare(right.bucket));
 }
 
+function loadConflictHeatmap(db: any, projectId: string): AnalyticsBucket[] {
+  const rows = db
+    .prepare(
+      `SELECT substr(created_at, 1, 10) AS bucket,
+              COUNT(*) AS conflicts,
+              SUM(CASE WHEN repeated_mistake = 1 THEN 1 ELSE 0 END) AS repeated_conflicts
+       FROM feedback_events
+       WHERE project_id = ?
+         AND outcome IN ('failure', 'regression')
+       GROUP BY bucket
+       ORDER BY bucket ASC`
+    )
+    .all(projectId) as { bucket: string; conflicts: number; repeated_conflicts: number }[];
+
+  return rows.map((row) => ({
+    bucket: row.bucket,
+    memories: 0,
+    conflicts: Number(row.conflicts),
+    recalls: Number(row.repeated_conflicts),
+    tokensSaved: 0
+  }));
+}
+
+function loadEvolutionTrend(db: any, projectId: string): AnalyticsBucket[] {
+  const rows = db
+    .prepare(
+      `SELECT substr(created_at, 1, 10) AS bucket,
+              SUM(CASE WHEN outcome IN ('success', 'partial') THEN 1 ELSE 0 END) AS successes,
+              SUM(CASE WHEN outcome IN ('failure', 'regression') THEN 1 ELSE 0 END) AS failures
+       FROM feedback_events
+       WHERE project_id = ?
+       GROUP BY bucket
+       ORDER BY bucket ASC`
+    )
+    .all(projectId) as { bucket: string; successes: number; failures: number }[];
+
+  return rows.map((row) => ({
+    bucket: row.bucket,
+    memories: Number(row.successes),
+    conflicts: Number(row.failures),
+    recalls: 0,
+    tokensSaved: 0
+  }));
+}
+
+function loadConflictHeatmapFromState(state: JsonState, projectId: string): AnalyticsBucket[] {
+  const byDay = new Map<string, AnalyticsBucket>();
+  for (const event of state.feedbackEvents) {
+    if (event.projectId !== projectId || !["failure", "regression"].includes(event.outcome)) continue;
+    const bucket = event.createdAt.slice(0, 10);
+    const current = byDay.get(bucket) ?? {
+      bucket,
+      memories: 0,
+      conflicts: 0,
+      recalls: 0,
+      tokensSaved: 0
+    };
+    current.conflicts += 1;
+    if (event.repeatedMistake) current.recalls += 1;
+    byDay.set(bucket, current);
+  }
+  return [...byDay.values()].sort((left, right) => left.bucket.localeCompare(right.bucket));
+}
+
+function loadEvolutionTrendFromState(state: JsonState, projectId: string): AnalyticsBucket[] {
+  const byDay = new Map<string, AnalyticsBucket>();
+  for (const event of state.feedbackEvents) {
+    if (event.projectId !== projectId) continue;
+    const bucket = event.createdAt.slice(0, 10);
+    const current = byDay.get(bucket) ?? {
+      bucket,
+      memories: 0,
+      conflicts: 0,
+      recalls: 0,
+      tokensSaved: 0
+    };
+    if (event.outcome === "success" || event.outcome === "partial") {
+      current.memories += 1;
+    } else {
+      current.conflicts += 1;
+    }
+    byDay.set(bucket, current);
+  }
+  return [...byDay.values()].sort((left, right) => left.bucket.localeCompare(right.bucket));
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-function ensureMemoryJsonColumn(db: DatabaseSync): void {
+function ensureProjectRow(db: any, projectId: string, shareScope: boolean): void {
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO projects(project_id, created_at, updated_at, share_scope, total_token_savings, total_queries)
+     VALUES (?, ?, ?, ?, 0, 0)
+     ON CONFLICT(project_id) DO UPDATE SET updated_at = excluded.updated_at, share_scope = excluded.share_scope`
+  ).run(projectId, now, now, shareScope ? 1 : 0);
+}
+
+function createDatabase(databasePath: string): any | null {
+  try {
+    const require = createRequire(import.meta.url);
+    const sqlite = require("node:sqlite") as { DatabaseSync: new (path: string) => any };
+    return new sqlite.DatabaseSync(databasePath);
+  } catch {
+    return null;
+  }
+}
+
+function createEmptyState(): JsonState {
+  return {
+    projects: {},
+    memories: [],
+    memoryVersions: {},
+    recollections: [],
+    feedbackEvents: []
+  };
+}
+
+function loadJsonState(stateFile: string): JsonState {
+  if (!existsSync(stateFile)) {
+    return createEmptyState();
+  }
+  try {
+    return JSON.parse(readFileSync(stateFile, "utf8")) as JsonState;
+  } catch {
+    return createEmptyState();
+  }
+}
+
+function ensureMemoryJsonColumn(db: any): void {
   const columns = db.prepare(`PRAGMA table_info(memories)`).all() as { name: string }[];
   if (!columns.some((column) => column.name === "record_json")) {
     db.exec(`ALTER TABLE memories ADD COLUMN record_json TEXT`);
   }
 }
 
-function hydrateRecord(db: DatabaseSync, row: Record<string, unknown>): MemoryRecord | undefined {
+function hydrateRecord(db: any, row: Record<string, unknown>): MemoryRecord | undefined {
   if (typeof row.record_json === "string" && row.record_json) {
     return JSON.parse(row.record_json) as MemoryRecord;
   }

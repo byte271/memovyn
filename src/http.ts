@@ -1,7 +1,5 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { extname } from "node:path";
-
 import type { Memovyn } from "./app.ts";
 import { handleMcpRequest } from "./mcp.ts";
 
@@ -124,7 +122,7 @@ function renderIndex(app: Memovyn): string {
     .listProjects()
     .map(
       (project) => `
-        <a class="project-card" href="/projects/${project.projectId}">
+        <a class="project-card" href="/projects/${encodeURIComponent(project.projectId)}">
           <div class="project-card__header">
             <strong>${escapeHtml(project.projectId)}</strong>
             <span>${project.memoryCount} memories</span>
@@ -164,8 +162,7 @@ function renderProject(app: Memovyn, projectId: string): string {
   const analytics = app.analytics(projectId);
   return baseHtml(
     `${projectId} · Memovyn`,
-    `<body data-project-id="${escapeHtml(projectId)}">
-      <main class="shell shell--project">
+    `<main class="shell shell--project">
         <aside class="sidebar panel">
           <div class="sidebar__top">
             <a href="/" class="back-link">Back</a>
@@ -216,11 +213,12 @@ function renderProject(app: Memovyn, projectId: string): string {
             <p>Click a memory card to inspect taxonomy signals, relations, provenance, and version history.</p>
           </section>
         </section>
-      </main>`
+      </main>`,
+    ` data-project-id="${escapeAttribute(projectId)}"`
   );
 }
 
-function baseHtml(title: string, body: string): string {
+function baseHtml(title: string, body: string, bodyAttributes = ""): string {
   return `<!doctype html>
   <html lang="en">
     <head>
@@ -229,7 +227,7 @@ function baseHtml(title: string, body: string): string {
       <title>${escapeHtml(title)}</title>
       <link rel="stylesheet" href="/static/app.css">
     </head>
-    <body>
+    <body${bodyAttributes}>
       ${body}
       <script src="/static/app.js"></script>
     </body>
@@ -265,4 +263,8 @@ function sendText(
 
 function escapeHtml(input: string): string {
   return input.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function escapeAttribute(input: string): string {
+  return escapeHtml(input).replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }

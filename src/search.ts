@@ -101,19 +101,16 @@ export class SearchIndex {
       this.insert(record);
       return;
     }
-    const current = project.docs[docIdx]!;
-    const oldArchived = isArchived(current.record);
-    const newArchived = isArchived(record);
-    if (!oldArchived && newArchived) project.activeDocCount -= 1;
-    if (oldArchived && !newArchived) project.activeDocCount += 1;
-    current.record = record;
-    current.scoreHint = rankingBias(record);
-    current.labelBlob = record.taxonomy.multiLabels.join(" ");
-    current.relationBlob = record.taxonomy.relations
-      .map((relation) => `${relation.source} ${relation.relation} ${relation.target}`)
-      .join(" ");
-    observeProjectInsights(project, record);
-    project.queryCache.clear();
+    project.docs[docIdx] = {
+      record,
+      docLen: Math.max(buildSearchTokens(record).length, 1),
+      scoreHint: rankingBias(record),
+      labelBlob: record.taxonomy.multiLabels.join(" "),
+      relationBlob: record.taxonomy.relations
+        .map((relation) => `${relation.source} ${relation.relation} ${relation.target}`)
+        .join(" ")
+    };
+    rebuildProjectIndex(project);
   }
 
   taxonomyFeedback(projectId: string): TaxonomyEvolutionSnapshot {
@@ -223,13 +220,21 @@ export class SearchIndex {
   }
 
   recentSummaries(projectId: string, limit: number): ProgressiveSummary[] {
-    return this.recentCards(projectId, limit).map((card) => ({
-      memoryId: card.memoryId,
-      mainCategory: card.labels[0] ?? "memory",
-      confidence: 0.8,
-      explanation: card.summary,
-      relations: []
-    }));
+    const project = this.projects.get(projectId);
+    if (!project) return [];
+    return project.docs
+      .filter((doc) => !isArchived(doc.record))
+      .slice(-limit)
+      .reverse()
+      .map((doc) => ({
+        memoryId: doc.record.id,
+        mainCategory: doc.record.taxonomy.mainCategory,
+        confidence: doc.record.taxonomy.confidence,
+        explanation: doc.record.taxonomy.metadata.summary,
+        relations: doc.record.taxonomy.relations
+          .slice(0, 4)
+          .map((relation) => `${relation.source} ${relation.relation} ${relation.target}`)
+      }));
   }
 
   recentTimeline(projectId: string, limit: number): TimelineEntry[] {
@@ -295,6 +300,10 @@ function searchProject(
     ? shortlistCandidates(project, limit, filters)
     : [...scores.keys()];
 
+  const totalHits = useShortlist
+    ? countBroadMatches(project, filters, tokens)
+    : candidateIndices.filter((idx) => matchesFilters(project.docs[idx]!.record, filters)).length;
+
   const hits = candidateIndices
     .map((idx) => {
       const doc = project.docs[idx]!;
@@ -306,8 +315,31 @@ function searchProject(
     .filter((hit): hit is SearchHit => Boolean(hit))
     .sort((a, b) => b.score - a.score || b.createdAt.localeCompare(a.createdAt));
 
-  project.queryCache.set(cacheKey, { totalHits: hits.length, hits: hits.slice(0, 64) });
-  return { totalHits: hits.length, hits: hits.slice(0, Math.max(limit * 6, 64)) };
+  if (!hits.length && project.docs.length) {
+    const fallbackHits = shortlistCandidates(project, limit, filters)
+      .map((idx) => {
+        const doc = project.docs[idx]!;
+        const overlap = tokens.filter(
+          (token) =>
+            doc.labelBlob.includes(token) ||
+            doc.relationBlob.includes(token) ||
+            doc.record.summary.toLowerCase().includes(token) ||
+            doc.record.content.toLowerCase().includes(token)
+        ).length;
+        return overlap > 0 || !tokens.length
+          ? toSearchHit(doc.record, doc.scoreHint + overlap * 0.4 + recencyBoost(doc.record.createdAt))
+          : undefined;
+      })
+      .filter((hit): hit is SearchHit => Boolean(hit))
+      .sort((a, b) => b.score - a.score || b.createdAt.localeCompare(a.createdAt));
+    if (fallbackHits.length) {
+      project.queryCache.set(cacheKey, { totalHits: fallbackHits.length, hits: fallbackHits.slice(0, 64) });
+      return { totalHits: fallbackHits.length, hits: fallbackHits.slice(0, Math.max(limit * 6, 64)) };
+    }
+  }
+
+  project.queryCache.set(cacheKey, { totalHits, hits: hits.slice(0, 64) });
+  return { totalHits, hits: hits.slice(0, Math.max(limit * 6, 64)) };
 }
 
 function shortlistCandidates(project: ProjectIndex, limit: number, filters: SearchFilters): number[] {
@@ -347,6 +379,77 @@ function observeProjectInsights(project: ProjectIndex, record: MemoryRecord): vo
     increment(bucket, dimension.dominantLabel);
     project.insights.dimensionCounts.set(dimension.dimension, bucket);
   }
+}
+
+function rebuildProjectIndex(project: ProjectIndex): void {
+  project.docLookup = new Map();
+  project.postings = new Map();
+  project.totalDocLen = 0;
+  project.avgDocLen = 1;
+  project.activeDocCount = 0;
+  project.insights = {
+    labelCounts: new Map(),
+    reinforcedCounts: new Map(),
+    solidifiedCounts: new Map(),
+    avoidCounts: new Map(),
+    relationCounts: new Map(),
+    dimensionCounts: new Map(),
+    privacyCounts: new Map(),
+    termDf: new Map()
+  };
+
+  project.docs = project.docs.map((doc, docIdx) => {
+    const tokens = buildSearchTokens(doc.record);
+    const docLen = Math.max(tokens.length, 1);
+    const freq = new Map<string, number>();
+    for (const token of tokens) {
+      freq.set(token, (freq.get(token) ?? 0) + 1);
+    }
+    for (const [token, termFreq] of freq) {
+      const bucket = project.postings.get(token) ?? [];
+      bucket.push({ docIdx, termFreq });
+      project.postings.set(token, bucket);
+      project.insights.termDf.set(token, (project.insights.termDf.get(token) ?? 0) + 1);
+    }
+    project.docLookup.set(doc.record.id, docIdx);
+    project.totalDocLen += docLen;
+    if (!isArchived(doc.record)) {
+      project.activeDocCount += 1;
+    }
+    observeProjectInsights(project, doc.record);
+    return {
+      record: doc.record,
+      docLen,
+      scoreHint: rankingBias(doc.record),
+      labelBlob: doc.record.taxonomy.multiLabels.join(" "),
+      relationBlob: doc.record.taxonomy.relations
+        .map((relation) => `${relation.source} ${relation.relation} ${relation.target}`)
+        .join(" ")
+    };
+  });
+
+  project.avgDocLen = project.docs.length ? project.totalDocLen / project.docs.length : 1;
+  project.queryCache.clear();
+}
+
+function countBroadMatches(project: ProjectIndex, filters: SearchFilters, tokens: string[]): number {
+  let count = 0;
+  for (const doc of project.docs) {
+    if (!matchesFilters(doc.record, filters)) continue;
+    if (
+      !tokens.length ||
+      tokens.some(
+        (token) =>
+          doc.labelBlob.includes(token) ||
+          doc.relationBlob.includes(token) ||
+          doc.record.summary.toLowerCase().includes(token) ||
+          doc.record.content.toLowerCase().includes(token)
+      )
+    ) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function createProjectIndex(): ProjectIndex {

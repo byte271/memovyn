@@ -8,15 +8,20 @@ import { ensureConfig, loadConfig } from "./config.ts";
 ensureExperimentalSqlite();
 
 async function main(): Promise<void> {
-  const [{ Memovyn }, { serveHttp }, { handleMcpRequest }] = await Promise.all([
+  const [command = "help", ...rest] = argv.slice(2);
+
+  if (command === "help" || command === "--help" || command === "-h") {
+    stdout.write(helpText);
+    return;
+  }
+
+  const [{ Memovyn }, { serveHttp }] = await Promise.all([
     import("./app.ts"),
-    import("./http.ts"),
-    import("./mcp.ts")
+    import("./http.ts")
   ]);
   const config = loadConfig();
   ensureConfig(config);
   const app = new Memovyn(config);
-  const [command = "help", ...rest] = argv.slice(2);
 
   switch (command) {
     case "serve":

@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 
-import type { Config } from "./config.ts";
+import type { Config, ForgettingPolicy } from "./config.ts";
 import { defaultMetadata, defaultSearchFilters, type AddMemoryInput, type AnalyticsSnapshot, type ArchiveInput, type ArchiveResponse, type FeedbackInput, type FeedbackResponse, type MemoryInspection, type MemoryKind, type MemoryRecord, type ProjectContext, type ReflectionInput, type ReflectionResponse, type SearchHit, type SearchInput } from "./types.ts";
 import { defaultLearningState } from "./types.ts";
 import { SearchIndex } from "./search.ts";
@@ -198,6 +198,20 @@ export class Memovyn {
       );
       for (const hit of related.detailLayer.filter((hit) => hit.memoryId !== memory.id).slice(0, 2)) {
         influencedMemories.push(hit.memoryId);
+      }
+    }
+
+    const { memoryCount, totalQueries } = this.storage.projectActivity(memory.projectId);
+    if (
+      (input.outcome === "success" || input.outcome === "partial") &&
+      memoryCount >= 512 &&
+      totalQueries >= 96
+    ) {
+      const archiveLimit = archiveLimitForPolicy(this.config.forgettingPolicy, memoryCount);
+      if (archiveLimit > 0) {
+        for (const archived of this.storage.archiveLowValueMemories(memory.projectId, archiveLimit)) {
+          this.search.refresh(archived);
+        }
       }
     }
 
@@ -424,6 +438,20 @@ function buildProactiveSuggestions(analytics: AnalyticsSnapshot): string[] {
     suggestions.push("Review summary compression and prefer progressive disclosure before injecting full memory bodies.");
   }
   return suggestions;
+}
+
+function archiveLimitForPolicy(policy: ForgettingPolicy, memoryCount: number): number {
+  switch (policy) {
+    case "off":
+      return 0;
+    case "conservative":
+      return 1;
+    case "aggressive":
+      return Math.min(6, Math.max(2, Math.ceil(memoryCount / 1024)));
+    case "balanced":
+    default:
+      return Math.min(3, Math.max(1, Math.ceil(memoryCount / 2048)));
+  }
 }
 
 function buildReconciliationHints(memory: MemoryRecord, influencedMemories: string[]): string[] {
