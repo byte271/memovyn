@@ -2,7 +2,7 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: ["src/index.ts", "src/cli.ts"],
-  format: ["esm"],
+  format: ["esm", "cjs"],
   platform: "node",
   target: "node24",
   dts: true,
@@ -12,9 +12,9 @@ export default defineConfig({
   outDir: "dist",
   minify: false,
   treeshake: true,
-  outExtension() {
-    return {
-      js: ".mjs"
-    };
+  outExtension({ format }) {
+    return format === "esm"
+      ? { js: ".mjs" }
+      : { js: ".cjs" };
   }
 });
