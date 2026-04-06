@@ -10,13 +10,19 @@ const outputBlob = resolve("sea-prep.blob");
 const platform = process.platform;
 const executableName = platform === "win32" ? "memovyn.exe" : "memovyn";
 const releaseBinary = join(releaseDir, executableName);
+const seaEntryCandidates = [
+  join(dist, "cli.cjs"),
+  join(dist, "cli.js"),
+  join(dist, "cli.mjs")
+];
+const seaEntry = seaEntryCandidates.find((candidate) => existsSync(candidate));
 const postjectBinary = resolve(
   "node_modules",
   ".bin",
   platform === "win32" ? "postject.cmd" : "postject"
 );
 
-if (!existsSync(join(dist, "cli.cjs"))) {
+if (!seaEntry) {
   throw new Error("Build output not found. Run `npm run build` first.");
 }
 if (!existsSync(postjectBinary)) {
@@ -30,7 +36,7 @@ writeFileSync(
   seaConfig,
   JSON.stringify(
     {
-      main: "./dist/cli.cjs",
+      main: `./dist/${seaEntry.split(/[/\\]/).pop()}`,
       output: "./sea-prep.blob",
       disableExperimentalSEAWarning: true
     },
