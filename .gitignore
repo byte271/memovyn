@@ -1,2 +1,10 @@
+
 /target
-/.memovyn
+
+.memovyn*
+.memovyn-bench*
+
+.DS_Store
+Thumbs.db
+
+*.log
