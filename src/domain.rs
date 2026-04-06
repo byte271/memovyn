@@ -128,6 +128,12 @@ pub struct TaxonomyMetadata {
     pub headline: String,
     pub summary: String,
     pub language_hint: String,
+    #[serde(default)]
+    pub classifier_backend: String,
+    #[serde(default)]
+    pub classifier_notes: Vec<String>,
+    #[serde(default)]
+    pub model_confidence: f32,
     pub token_count: usize,
     pub signal_count: usize,
     #[serde(default)]
@@ -383,6 +389,8 @@ pub struct FeedbackResponse {
     pub influenced_memories: Vec<MemoryId>,
     #[serde(default)]
     pub learning_delta: f32,
+    #[serde(default)]
+    pub reconciliation_hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -414,20 +422,28 @@ pub struct AnalyticsSnapshot {
     pub total_memories: usize,
     pub total_queries: u64,
     pub total_token_savings: u64,
+    pub estimated_tokens_per_recall: u64,
     pub session_queries: u64,
     pub session_token_savings: u64,
     pub conflict_count: usize,
     pub reinforced_memories: usize,
     pub penalized_memories: usize,
+    pub memory_health_score: u8,
+    pub learning_impact_score: u8,
     pub most_recalled: Vec<RankedMemoryStat>,
     pub most_reinforced: Vec<RankedMemoryStat>,
     pub most_punished: Vec<RankedMemoryStat>,
+    pub most_impactful: Vec<RankedMemoryStat>,
     pub label_hotspots: Vec<(String, usize)>,
     pub relation_hotspots: Vec<(String, usize)>,
     pub conflict_heatmap: Vec<AnalyticsBucket>,
     pub growth: Vec<AnalyticsBucket>,
+    pub evolution_trend: Vec<AnalyticsBucket>,
+    pub agent_evolution_timeline: Vec<AnalyticsBucket>,
     #[serde(default)]
     pub behavior_insights: Vec<String>,
+    #[serde(default)]
+    pub proactive_suggestions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -470,6 +486,8 @@ pub struct MemoryInspection {
     pub memory: MemoryRecord,
     pub versions: Vec<MemoryVersionSnapshot>,
     pub explanation: Vec<String>,
+    #[serde(default)]
+    pub provenance: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

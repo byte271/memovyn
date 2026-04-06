@@ -22,6 +22,7 @@ struct ProjectIndex {
     postings: HashMap<String, Vec<Posting>>,
     total_doc_len: usize,
     avg_doc_len: f32,
+    active_doc_count: usize,
     insights: ProjectInsights,
     query_cache: RwLock<HashMap<String, CachedQuery>>,
 }
@@ -30,6 +31,7 @@ struct ProjectIndex {
 struct ProjectInsights {
     label_counts: HashMap<String, usize>,
     reinforced_label_counts: HashMap<String, usize>,
+    solidified_prior_counts: HashMap<String, usize>,
     avoid_label_counts: HashMap<String, usize>,
     relation_counts: HashMap<String, usize>,
     dimension_counts: HashMap<String, HashMap<String, usize>>,
@@ -63,6 +65,12 @@ struct ScoredDoc {
     idx: usize,
     score: f32,
     created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct QueryProfile {
+    all_broad: bool,
+    has_broad: bool,
 }
 
 impl SearchIndex {
@@ -337,6 +345,9 @@ impl ProjectIndex {
         self.insights.observe_insert(&record, &unique_terms);
         self.total_doc_len += doc_len;
         self.avg_doc_len = self.total_doc_len as f32 / (doc_idx + 1) as f32;
+        if !is_archived(&record) {
+            self.active_doc_count += 1;
+        }
         self.doc_lookup.insert(record.id, doc_idx);
         self.docs.push(IndexedMemory {
             score_hint: ranking_bias(&record),
@@ -357,6 +368,13 @@ impl ProjectIndex {
             return;
         };
         let old_record = self.docs[doc_idx].record.clone();
+        let old_archived = is_archived(&old_record);
+        let new_archived = is_archived(&record);
+        match (old_archived, new_archived) {
+            (false, true) => self.active_doc_count = self.active_doc_count.saturating_sub(1),
+            (true, false) => self.active_doc_count += 1,
+            _ => {}
+        }
         self.docs[doc_idx].score_hint = ranking_bias(&record);
         self.docs[doc_idx].label_blob = build_label_blob(&record);
         self.docs[doc_idx].relation_blob = build_relation_blob(&record);
@@ -418,6 +436,7 @@ impl ProjectIndex {
         TaxonomyEvolutionSnapshot {
             prior_labels: top_keys(&self.insights.label_counts, 10),
             reinforced_labels: top_keys(&self.insights.reinforced_label_counts, 8),
+            solidified_priors: top_keys(&self.insights.solidified_prior_counts, 6),
             avoid_patterns: top_keys(&self.insights.avoid_label_counts, 8),
             project_terms: top_keys(&self.insights.term_df, 12)
                 .into_iter()
@@ -437,66 +456,31 @@ impl ProjectIndex {
             return cached;
         }
 
-        let mut scores = vec![0.0f32; self.docs.len()];
-        let mut touched = Vec::<usize>::with_capacity(self.docs.len().min(keep.saturating_mul(32)));
-        if tokens.is_empty() {
-            touched.extend(0..self.docs.len());
-            for idx in 0..self.docs.len() {
-                scores[idx] = recency_boost(self.docs[idx].record.created_at);
-            }
-        } else {
-            for token in tokens {
-                if let Some(postings) = self.postings.get(*token) {
-                    let df = postings.len() as f32;
-                    let idf = ((self.docs.len() as f32 - df + 0.5) / (df + 0.5) + 1.0).ln();
-                    for posting in postings {
-                        let doc = &self.docs[posting.doc_idx];
-                        let tf = posting.term_freq as f32;
-                        let doc_len = doc.doc_len as f32;
-                        let bm25 = idf
-                            * ((tf * 2.2)
-                                / (tf
-                                    + 1.2
-                                        * (1.0 - 0.75
-                                            + 0.75 * (doc_len / self.avg_doc_len.max(1.0)))));
-                        if scores[posting.doc_idx] == 0.0 {
-                            touched.push(posting.doc_idx);
-                        }
-                        scores[posting.doc_idx] += bm25;
-                    }
-                }
-            }
-        }
-
-        let broad_query = is_broad_query(tokens, &self.postings, self.docs.len());
-        let mut scored = Vec::with_capacity(touched.len().min(keep.max(32)));
-        for doc_idx in touched {
-            let doc = &self.docs[doc_idx];
-            if !matches_filters(doc, filters) {
-                continue;
-            }
-
-            let (taxonomy_overlap, relation_overlap) = if broad_query {
-                (0.0, 0.0)
+        let profile = query_profile(tokens, &self.postings, self.docs.len());
+        // Broad, high-density queries are the hardest large-scale case. Instead of
+        // expanding the entire project candidate set, we score a ranked active
+        // shortlist and only materialize the winning top-k documents.
+        let (total_hits, mut scored) = if tokens.is_empty() {
+            self.score_recent_shortlist(tokens, filters, keep, self.active_doc_count.max(keep))
+        } else if profile.all_broad {
+            let total_hits = if filters.is_empty() {
+                self.active_doc_count
             } else {
-                (
-                    overlap_score(tokens, &doc.label_blob),
-                    overlap_score(tokens, &doc.relation_blob) * 1.3333334,
-                )
+                self.filtered_count(filters, recent_candidate_limit(self.active_doc_count, keep))
             };
-
-            scored.push(ScoredDoc {
-                idx: doc_idx,
-                score: scores[doc_idx]
-                    + taxonomy_overlap * 0.45
-                    + relation_overlap * 0.45
-                    + doc.score_hint
-                    + recency_boost(doc.record.created_at),
-                created_at: doc.record.created_at,
-            });
-        }
-
-        let total_hits = scored.len();
+            (
+                total_hits,
+                self.score_recent_shortlist(
+                    tokens,
+                    filters,
+                    keep,
+                    recent_candidate_limit(self.active_doc_count, keep),
+                )
+                .1,
+            )
+        } else {
+            self.score_selective_candidates(tokens, filters, keep, profile)
+        };
         trim_scored_to_top_k(&mut scored, keep.max(1));
         let hits = scored
             .into_iter()
@@ -566,6 +550,130 @@ impl ProjectIndex {
             },
         );
     }
+
+    fn score_recent_shortlist(
+        &self,
+        tokens: &[&str],
+        filters: &SearchFilters,
+        keep: usize,
+        shortlist: usize,
+    ) -> (usize, Vec<ScoredDoc>) {
+        // ZeroText-style fast path: recent, active memories tend to dominate broad
+        // operational queries, so we keep this path allocation-light and avoid
+        // walking every high-frequency posting list.
+        let mut total_hits = 0usize;
+        let mut scored = Vec::with_capacity(shortlist.min(keep.saturating_mul(16).max(64)));
+        for (idx, doc) in self.docs.iter().enumerate().rev() {
+            if scored.len() >= shortlist {
+                break;
+            }
+            if !matches_filters(doc, filters) {
+                continue;
+            }
+            total_hits += 1;
+            let broad_bonus = if tokens.is_empty() {
+                0.0
+            } else {
+                overlap_score(tokens, &doc.label_blob) * 0.28
+                    + overlap_score(tokens, &doc.relation_blob) * 0.16
+                    + overlap_score(tokens, &doc.record.summary) * 0.12
+            };
+            scored.push(ScoredDoc {
+                idx,
+                score: doc.score_hint + broad_bonus + recency_boost(doc.record.created_at),
+                created_at: doc.record.created_at,
+            });
+        }
+        (total_hits, scored)
+    }
+
+    fn score_selective_candidates(
+        &self,
+        tokens: &[&str],
+        filters: &SearchFilters,
+        keep: usize,
+        profile: QueryProfile,
+    ) -> (usize, Vec<ScoredDoc>) {
+        // Selective queries still benefit from classic inverted-index scoring, but
+        // we skip extremely dense tokens and fall back to a recent shortlist when
+        // a query mixes broad and specific terms.
+        let mut scores = vec![0.0f32; self.docs.len()];
+        let mut touched = Vec::<usize>::with_capacity(keep.saturating_mul(32).max(256));
+
+        for token in tokens {
+            let Some(postings) = self.postings.get(*token) else {
+                continue;
+            };
+            let density = postings.len() as f32 / self.docs.len().max(1) as f32;
+            if density >= 0.18 {
+                continue;
+            }
+            let df = postings.len() as f32;
+            let idf = ((self.docs.len() as f32 - df + 0.5) / (df + 0.5) + 1.0).ln();
+            for posting in postings {
+                let doc = &self.docs[posting.doc_idx];
+                let tf = posting.term_freq as f32;
+                let doc_len = doc.doc_len as f32;
+                let bm25 = idf
+                    * ((tf * 2.2)
+                        / (tf + 1.2 * (1.0 - 0.75 + 0.75 * (doc_len / self.avg_doc_len.max(1.0)))));
+                if scores[posting.doc_idx] == 0.0 {
+                    touched.push(posting.doc_idx);
+                }
+                scores[posting.doc_idx] += bm25;
+            }
+        }
+
+        if touched.is_empty() || profile.has_broad {
+            let shortlist = recent_candidate_limit(self.active_doc_count, keep);
+            for (idx, doc) in self.docs.iter().enumerate().rev() {
+                if touched.len() >= shortlist {
+                    break;
+                }
+                if is_archived(&doc.record) || scores[idx] != 0.0 {
+                    continue;
+                }
+                touched.push(idx);
+            }
+        }
+
+        let mut scored = Vec::with_capacity(touched.len().min(keep.saturating_mul(16).max(64)));
+        for doc_idx in touched {
+            let doc = &self.docs[doc_idx];
+            if !matches_filters(doc, filters) {
+                continue;
+            }
+            let taxonomy_overlap = overlap_score(tokens, &doc.label_blob);
+            let relation_overlap = overlap_score(tokens, &doc.relation_blob);
+            scored.push(ScoredDoc {
+                idx: doc_idx,
+                score: scores[doc_idx]
+                    + taxonomy_overlap * 0.45
+                    + relation_overlap * 0.4
+                    + doc.score_hint
+                    + recency_boost(doc.record.created_at),
+                created_at: doc.record.created_at,
+            });
+        }
+        let total_hits = scored.len();
+        (total_hits, scored)
+    }
+
+    fn filtered_count(&self, filters: &SearchFilters, hard_cap: usize) -> usize {
+        if filters.is_empty() {
+            return self.active_doc_count;
+        }
+        let mut count = 0usize;
+        for doc in self.docs.iter().rev() {
+            if matches_filters(doc, filters) {
+                count += 1;
+                if count >= hard_cap {
+                    break;
+                }
+            }
+        }
+        count
+    }
 }
 
 impl ProjectInsights {
@@ -580,6 +688,12 @@ impl ProjectInsights {
                     .reinforced_label_counts
                     .entry(label.clone())
                     .or_insert(0) += 1;
+                if record.learning.success_score >= 2.0 || record.access_count >= 3 {
+                    *self
+                        .solidified_prior_counts
+                        .entry(label.clone())
+                        .or_insert(0) += 1;
+                }
             }
             if label.starts_with("sensitive:") || label.starts_with("privacy:") {
                 *self.privacy_counts.entry(label.clone()).or_insert(0) += 1;
@@ -613,16 +727,24 @@ impl ProjectInsights {
     fn observe_learning_refresh(&mut self, old: &MemoryRecord, new: &MemoryRecord) {
         let old_reinforced = old.reinforcement >= old.penalty;
         let new_reinforced = new.reinforcement >= new.penalty;
-        if old_reinforced == new_reinforced {
-            return;
-        }
         for label in &new.taxonomy.multi_labels {
-            if old_reinforced {
+            if old_reinforced && !new_reinforced {
                 decrement_map(&mut self.reinforced_label_counts, label);
             }
-            if new_reinforced {
+            if !old_reinforced && new_reinforced {
                 *self
                     .reinforced_label_counts
+                    .entry(label.clone())
+                    .or_insert(0) += 1;
+            }
+            let old_solidified = old.learning.success_score >= 2.0 || old.access_count >= 3;
+            let new_solidified = new.learning.success_score >= 2.0 || new.access_count >= 3;
+            if old_solidified && !new_solidified {
+                decrement_map(&mut self.solidified_prior_counts, label);
+            }
+            if !old_solidified && new_solidified {
+                *self
+                    .solidified_prior_counts
                     .entry(label.clone())
                     .or_insert(0) += 1;
             }
@@ -748,21 +870,35 @@ fn overlap_score(tokens: &[&str], haystack: &str) -> f32 {
         .count() as f32
 }
 
-fn is_broad_query(
+fn query_profile(
     tokens: &[&str],
     postings: &HashMap<String, Vec<Posting>>,
     doc_count: usize,
-) -> bool {
+) -> QueryProfile {
     if tokens.is_empty() || doc_count == 0 {
-        return false;
+        return QueryProfile::default();
     }
-    let mean_density = tokens
-        .iter()
-        .filter_map(|token| postings.get(*token))
-        .map(|postings| postings.len() as f32 / doc_count as f32)
-        .sum::<f32>()
-        / tokens.len() as f32;
-    mean_density >= 0.45
+    let mut all_broad = true;
+    let mut has_broad = false;
+    for token in tokens {
+        let density = postings
+            .get(*token)
+            .map(|postings| postings.len() as f32 / doc_count as f32)
+            .unwrap_or(0.0);
+        if density >= 0.18 {
+            has_broad = true;
+        } else {
+            all_broad = false;
+        }
+    }
+    QueryProfile {
+        all_broad: has_broad && all_broad,
+        has_broad,
+    }
+}
+
+fn recent_candidate_limit(active_doc_count: usize, keep: usize) -> usize {
+    active_doc_count.min(keep.saturating_mul(96).max(2048))
 }
 
 fn cache_key(query: &str, filters: &SearchFilters) -> String {
@@ -785,6 +921,22 @@ fn cache_key(query: &str, filters: &SearchFilters) -> String {
 
 fn is_cacheable(filters: &SearchFilters) -> bool {
     !filters.include_shared
+}
+
+trait SearchFiltersExt {
+    fn is_empty(&self) -> bool;
+}
+
+impl SearchFiltersExt for SearchFilters {
+    fn is_empty(&self) -> bool {
+        self.labels.is_empty()
+            && self.kinds.is_empty()
+            && self.since.is_none()
+            && self.until.is_none()
+            && !self.include_private_notes
+            && !self.include_shared
+            && !self.include_archived
+    }
 }
 
 fn matches_filters(doc: &IndexedMemory, filters: &SearchFilters) -> bool {
@@ -973,13 +1125,16 @@ mod tests {
             index.insert(record);
         }
         let insert_elapsed = insert_started.elapsed();
-        let _ = index.search(
+        let cold_started = Instant::now();
+        let cold_response = index.search(
             "scale-demo",
             "sqlite reinforcement conflict",
             20,
             &Default::default(),
             &[],
         );
+        let cold_elapsed = cold_started.elapsed();
+        assert!(cold_response.total_hits > 0);
         let _ = index.search(
             "scale-demo",
             "sqlite reinforcement conflict architecture",
@@ -1011,8 +1166,9 @@ mod tests {
         assert!(response.total_hits > 0);
         assert!(!response.detail_layer.is_empty());
         eprintln!(
-            "200k scale simulation insert={:?} search_avg_ms={} search_p95_ms={}",
+            "200k scale simulation insert={:?} cold_broad_ms={} search_avg_ms={} search_p95_ms={}",
             insert_elapsed,
+            cold_elapsed.as_secs_f64() * 1000.0,
             avg as f32 / 1000.0,
             p95 as f32 / 1000.0
         );

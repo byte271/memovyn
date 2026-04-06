@@ -1,209 +1,219 @@
 # Memovyn
 
-Memovyn is a local-first, MCP-native permanent memory framework for coding agents. It gives Claude Code, Cursor, Codex, and any MCP-compatible tool a project-scoped shared brain with structured recall, explainable taxonomy, issue punishment, reinforcement, and human-debuggable state.
+[![Node.js](https://img.shields.io/badge/Node.js-24-black?logo=node.js)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-white?logo=typescript)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-MIT-black)](./LICENSE)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-white)](./.github/workflows/ci.yml)
+[![MCP](https://img.shields.io/badge/MCP-Native-black)](https://modelcontextprotocol.io/)
+[![Version](https://img.shields.io/badge/Version-v0.2.0-white)](./CHANGELOG.md)
 
-Version `0.1.0` stays deliberately 100% LLM-free in the hot path. Classification, ranking, context assembly, conflict surfacing, and memory evolution are all algorithmic.
+Memovyn is a local-first, MCP-native permanent memory framework for coding agents. It gives Claude Code, Cursor, Codex, and any MCP-compatible tool a persistent project brain with structured taxonomy, explainable ranking, reinforcement learning, strategic forgetting, and high-speed recall.
 
-## What Changed In This Pass
+Memovyn v0.2 is the **Node.js 24 + TypeScript edition**. The project now runs on a modern Node runtime while preserving the same high-performance philosophy:
+- fearfully fast taxonomy and search
+- local-first SQLite persistence
+- reinforcement, priors, and avoid-pattern learning
+- progressive disclosure for token efficiency
+- premium dashboard and MCP-native workflows
 
-- Taxonomy engine upgraded from a strong flat classifier into a multi-dimensional memory compiler.
-- Memory records now carry:
-  - semantic, domain, activity, artifact, lifecycle, privacy, and language breakdowns
-  - confidence scores
-  - inferred relationships
-  - avoid-pattern and reinforce-pattern tracks
-  - debug traces showing alias hits, prototype hits, path hints, and project priors
-- Search now indexes memory content plus taxonomy structure, not just raw text.
-- Project context now includes relation summaries, dominant dimensions, conflict notes, and shared recall summaries.
-- Dashboard now exposes project stats, relation heatmaps, debug notes, and a memory inspection drawer.
-- Storage now tracks richer project analytics, conflict counts, token savings, and version snapshots after feedback updates.
-- Memovyn now persists first-class learning state on each memory:
-  - `success_score`
-  - `failure_count`
-  - `repeated_mistake_count`
-  - `reinforcement_decay`
-  - `conflict_score`
-  - `last_feedback_at`
-- Feedback is now a first-class operation across CLI, MCP, and dashboard, not just an internal side-effect of reflection.
-- Feedback now supports weighted reinforcement, adaptive decay, and cross-project influence for shared memories.
-- Repeated failures are consolidated into explicit `avoid:{category}:{pattern}` rules so they stay retrievable as durable warnings.
-- Analytics now expose:
-  - top 50 recalled memories
-  - most reinforced and most punished memories
-  - project and session token savings
-  - growth-over-time buckets
-  - conflict heatmaps
-  - behavior insights
-  - CSV and Markdown export
-- Dashboard now supports direct archive actions in addition to reinforce/punish/inspect.
-- CLI now includes `inspect`, `feedback`, `archive`, and `analytics`.
+## Why Memovyn?
 
-## Why Memovyn
+Developers are tired of agents forgetting everything between sessions, repeating old mistakes, and bloating context with unusable memory.
 
-- Local-only persistence with zero cloud dependency.
-- Per-project isolation with optional cross-project sharing.
-- Pure-algorithm taxonomy and retrieval with no vector requirement.
-- Reinforcement and punishment loop for learning from successes and repeated failures.
-- Progressive disclosure retrieval:
+Memovyn is built to solve that directly:
+- **Local-first by default**: your memory stays on disk, in your control.
+- **Taxonomy-native**: memories are decomposed into semantic, domain, activity, artifact, lifecycle, privacy, and language dimensions.
+- **Explainable**: every memory can be inspected with labels, relations, provenance, and version history.
+- **Learning-driven**: reinforced patterns become project priors, repeated failures become durable avoid rules, and low-value memories can be archived.
+- **MCP-native**: one codebase powers CLI, MCP stdio, MCP HTTP, dashboard, and release packaging.
+
+## Why It Beats Typical Memory Layers
+
+| Capability | Memovyn | Mem0 / Letta / Zep / vector-only memory |
+| --- | --- | --- |
+| Local-first persistence | Native | Often partial or cloud-first |
+| Structured taxonomy | Multi-dimensional and explainable | Usually flat or embedding-driven |
+| Learning loop | Reinforcement, priors, avoid-rules, forgetting | Often weak or manual |
+| Debuggability | Signals, provenance, versions, health report | Often opaque |
+| Token efficiency | Progressive disclosure with explicit estimator | Frequently context-heavy |
+| MCP-native workflow | First-class | Usually wrapper-level |
+
+## Feature Highlights
+
+### Permanent Project Memory
+- isolated memory containers keyed by `project_id`
+- SQLite-backed persistence across sessions and reboots
+- optional cross-project sharing
+- export/import and version history
+
+### World-Class Taxonomy Engine
+- 20-50 labels per memory
+- 3-5 level hierarchy
+- high-precision alias matching
+- BM25-style prototype scoring
+- prefix-trie clustering
+- relation inference and debug traces
+- strong project priors and solidified priors
+
+### Optional Memovyn_0.1B Hybrid Classifier Hook
+- local Ollama integration
+- multi-language guidance and smarter label hints
+- safe fallback to pure-algorithm mode
+- deterministic taxonomy remains the final authority
+
+### Reinforcement And Strategic Forgetting
+- weighted feedback
+- adaptive decay tuned by project activity
+- consolidated avoid-patterns for repeated regressions
+- cross-project influence for shared memories
+- configurable forgetting policy:
+  - `off`
+  - `conservative`
+  - `balanced`
+  - `aggressive`
+
+### Analytics And Operator UX
+- token savings estimator
+- Memory Health Score
+- Learning Impact Score
+- Agent Evolution Timeline
+- most recalled, reinforced, punished, and impactful memories
+- conflict heatmaps and proactive suggestions
+- Project Memory Health Report export in Markdown
+- dashboard dark mode and better loading states
+
+### Retrieval Model
+- progressive disclosure:
   - index cards
   - summary layer
   - timeline layer
-  - full detail layer
-- Human-debuggable memory inspection instead of black-box scoring.
-- Unified binary for CLI, MCP stdio, MCP HTTP, and dashboard.
+  - detail layer
+- broad-query fast path for large corpora
+- active shortlist ranking for cold high-density queries
+- cached project priors and query plans
 
-## Repository Structure
+## Installation
 
-```text
-memovyn/
-├── .dockerignore
-├── .gitignore
-├── Cargo.lock
-├── Cargo.toml
-├── Dockerfile
-├── README.md
-├── docker-compose.yml
-├── examples/
-│   ├── claude-code.mcp.json
-│   ├── codex.mcp.json
-│   └── cursor.mcp.json
-├── src/
-│   ├── app.rs
-│   ├── config.rs
-│   ├── domain.rs
-│   ├── error.rs
-│   ├── lib.rs
-│   ├── main.rs
-│   ├── search.rs
-│   ├── dashboard/
-│   │   └── mod.rs
-│   ├── mcp/
-│   │   └── mod.rs
-│   ├── storage/
-│   │   └── mod.rs
-│   └── taxonomy/
-│       └── mod.rs
-└── static/
-    ├── app.css
-    └── app.js
+### Option 1: Use Release Binary
+
+Download the latest platform artifact from GitHub Releases and place the extracted `memovyn` executable on your `PATH`.
+
+Linux / macOS:
+```bash
+chmod +x memovyn
+./memovyn --help
 ```
 
-## One-Command Docker
+Windows PowerShell:
+```powershell
+.\memovyn.exe --help
+```
+
+### Option 2: Build From Source
+
+Requirements:
+- Node.js 24 LTS
+- npm 11+
+
+Clone and install:
+```bash
+git clone https://github.com/byte271/memovyn.git
+cd memovyn
+npm install
+```
+
+Run local validation:
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+### Data Directory
+
+By default Memovyn stores local state under `./.memovyn`.
+
+Override it with:
+```bash
+MEMOVYN_DATA_DIR=/path/to/data
+```
+
+### Optional Ollama Hook
+
+Enable the hybrid classifier:
+```bash
+MEMOVYN_CLASSIFIER_MODE=ollama
+MEMOVYN_OLLAMA_BASE_URL=http://127.0.0.1:11434
+MEMOVYN_OLLAMA_MODEL=memovyn_0.1b
+MEMOVYN_OLLAMA_TIMEOUT_MS=350
+```
+
+If Ollama is unavailable or the model does not respond correctly, Memovyn falls back to pure-algorithm mode automatically.
+
+### Strategic Forgetting Policy
 
 ```bash
-docker compose up --build
+MEMOVYN_FORGETTING_POLICY=balanced
 ```
 
-Then open:
+Supported values:
+- `off`
+- `conservative`
+- `balanced`
+- `aggressive`
 
-- Dashboard: [http://localhost:7761](http://localhost:7761)
-- MCP HTTP endpoint: [http://localhost:7761/mcp](http://localhost:7761/mcp)
-
-Memories persist in `./.memovyn`.
-
-## Local Build
-
-```bash
-cargo build --release
-```
-
-Run the dashboard and HTTP MCP server:
-
-```bash
-cargo run -- serve --bind 127.0.0.1:7761
-```
-
-Run as a stdio MCP server:
-
-```bash
-cargo run -- mcp-stdio
-```
-
-## CLI Quickstart
+## Quick Start
 
 Add a memory:
-
 ```bash
-cargo run -- add memovyn-core "We chose SQLite WAL mode and BM25 retrieval for project memory search."
+node --experimental-strip-types src/cli.ts add memovyn-core "We chose SQLite WAL mode and BM25 retrieval for project memory search."
 ```
 
 Search memories:
-
 ```bash
-cargo run -- search memovyn-core "sqlite retrieval" --limit 5
+node --experimental-strip-types src/cli.ts search memovyn-core "sqlite retrieval" --limit 5
 ```
 
-Get ready-to-inject context:
-
+Get ready-to-inject project context:
 ```bash
-cargo run -- context memovyn-core
+node --experimental-strip-types src/cli.ts context memovyn-core
 ```
 
-Reflect a task result:
-
+Reflect on a result:
 ```bash
-cargo run -- reflect memovyn-core "Regression came from forgetting to update the postings index after insert." --outcome regression
+node --experimental-strip-types src/cli.ts reflect memovyn-core "Regression came from forgetting to update the postings index after insert." --outcome regression
 ```
 
-Apply explicit feedback to an existing memory:
-
+Apply explicit feedback:
 ```bash
-cargo run -- feedback 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe --outcome success --weight 1.25
+node --experimental-strip-types src/cli.ts feedback 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe --outcome success --weight 1.25
 ```
 
-Archive a memory so it leaves active recall but stays inspectable:
-
+Inspect a memory:
 ```bash
-cargo run -- archive 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
+node --experimental-strip-types src/cli.ts inspect 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
 ```
 
-Create a private note anchor:
-
+Archive a low-value memory:
 ```bash
-cargo run -- note memovyn-core "Remember: never store raw credentials in memory entries."
+node --experimental-strip-types src/cli.ts archive 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
 ```
 
-Inspect a memory record and its version trail:
-
+Generate a Project Memory Health Report:
 ```bash
-cargo run -- inspect 0195f7f4-8aa7-7ad0-8b8d-9a6b3d5c31fe
+node --experimental-strip-types src/cli.ts analytics memovyn-core --markdown
 ```
 
-Inspect project analytics as JSON or CSV:
+## MCP Bindings
 
-```bash
-cargo run -- analytics memovyn-core
-cargo run -- analytics memovyn-core --csv
-cargo run -- analytics memovyn-core --markdown
-```
-
-Export a project:
-
-```bash
-cargo run -- export memovyn-core memovyn-core.backup.json
-```
-
-Import a project backup:
-
-```bash
-cargo run -- import memovyn-core.backup.json
-```
-
-## MCP Tools
-
-Memovyn exposes the following MCP tools over both stdio and HTTP JSON-RPC:
-
-1. `add_memory(project_id, content, metadata?, kind?)`
-2. `search_memories(project_id, query, limit, filters?)`
-3. `get_project_context(project_id)`
-4. `reflect_memory(project_id, task_result, outcome, metadata?)`
-5. `feedback_memory(memory_id, outcome, repeated_mistake?, weight?, cross_project_influence?, avoid_patterns?, note?)`
-6. `get_project_analytics(project_id)`
-7. `archive_memory(memory_id)`
-
-`reflect_memory` returns an interactive confirmation payload with `Yes`, `Edit`, and `No` actions so a lead agent can decide whether to commit the fully classified memory.
-
-## Connector Binding
+Memovyn exposes:
+- `add_memory`
+- `search_memories`
+- `get_project_context`
+- `reflect_memory`
+- `feedback_memory`
+- `get_project_analytics`
+- `archive_memory`
 
 ### Claude Code
 
@@ -231,169 +241,163 @@ Use [examples/cursor.mcp.json](/D:/memovyn/examples/cursor.mcp.json).
 
 Use [examples/codex.mcp.json](/D:/memovyn/examples/codex.mcp.json).
 
-## Taxonomy Engine
+### MCP HTTP Server
 
-The taxonomy engine in [src/taxonomy/mod.rs](/D:/memovyn/src/taxonomy/mod.rs) is Memovyn’s crown jewel.
+Run:
+```bash
+node --experimental-strip-types src/cli.ts serve --bind 127.0.0.1:7761
+```
 
-### Dimensions
-
-- `semantic`: fact, preference, decision, risk, instruction, incident, learned pattern
-- `domain`: architecture, storage, retrieval, performance, security, API, UI, tooling, testing, deployment, collaboration, documentation
-- `activity`: implement, fix, benchmark, refactor, investigate, review, reflect, plan, migrate
-- `artifact`: module, database artifact, endpoint, path artifact, config artifact, command artifact, query plan, test artifact, prompt artifact
-- `lifecycle`: recent, stable, avoid pattern, blocked, planned, regression, reinforced, cross project, deprecated
-- `privacy`: private, secret, PII
-- `language`: Rust, TypeScript, Python, SQL, shell, JSON
-
-### Classification Pipeline
-
-- Aho-Corasick phrase matching for high-precision category triggers.
-- BM25-style prototype scoring across taxonomy seeds.
-- Prefix-trie emergent clustering for project-specific repeated terms.
-- Project-evolution priors from existing memory containers.
-- Relationship inference across top-ranked labels.
-- Hierarchy emission with 3-5 levels:
-  - root
-  - dimension
-  - category
-  - lifecycle/privacy/language refinements
-  - cluster nodes
-
-### Memory Output Shape
-
-Each memory now includes:
-
-- `main_category`
-- `confidence`
-- `multi_labels` with 20-50 labels
-- `dimensions`
-- `signals`
-- `relations`
-- `avoid_patterns`
-- `reinforce_patterns`
-- `debug` traces for black-box debugging
+Endpoints:
+- Dashboard: [http://localhost:7761](http://localhost:7761)
+- MCP HTTP: [http://localhost:7761/mcp](http://localhost:7761/mcp)
 
 ## Dashboard
 
-The dashboard in [src/dashboard/mod.rs](/D:/memovyn/src/dashboard/mod.rs) now provides:
+The dashboard includes:
+- project cards
+- taxonomy heatmaps
+- relation summaries
+- top recalled, reinforced, punished, and impactful memories
+- conflict and evolution views
+- token savings estimator
+- Memory Health Score
+- Learning Impact Score
+- Project Memory Health Report export
+- provenance-rich inspection
+- one-click reinforce, punish, archive, and inspect actions
+- dark mode toggle
 
-- project cards with conflict counts and token-savings signals
-- project context card
-- taxonomy heatmap
-- relation graph summary
-- reinforcement leaders
-- top recalled memories
-- most reinforced vs most punished memory lists
-- growth-over-time and conflict-heatmap analytics
-- behavior insights
-- CSV and Markdown export for analytics
-- virtualized memory stream
-- click-to-inspect memory drawer with taxonomy explanation, version trail, and direct reinforce/punish/archive actions
+## Architecture Overview
 
-## Architecture
+### Storage Layer
+- SQLite via Node’s built-in `node:sqlite`
+- project containers with share-scope flags
+- feedback event history
+- version snapshots
+- recall and token-savings tracking
 
-### 1. Storage Layer
+### Taxonomy Layer
+- alias matching and prototype scoring
+- relation inference
+- solidified priors and avoid-pattern feedback
+- optional model guidance merged into deterministic ranking
 
-- SQLite with WAL mode.
-- Project containers with share-scope flags.
-- Memory version snapshots.
-- Recall logging with token-savings tracking.
-- Conflict counts and recall analytics.
+### Search Layer
+- in-memory inverted index
+- precomputed ranking hints
+- broad-query shortlist path
+- query caching
+- progressive disclosure output
 
-### 2. Search Layer
+### Learning Layer
+- weighted reinforcement
+- adaptive decay
+- strategic forgetting
+- cross-project influence
+- proactive suggestions and reconciliation hints
 
-- In-memory inverted index by project.
-- Search corpus includes content, summaries, labels, relations, and dimension summaries.
-- Reinforcement, penalty, relation overlap, and recency-aware ranking.
-- Project-insights cache for fast taxonomy feedback and project summaries.
-- Search refresh path updates learning state in-memory without rebuilding postings.
-- Project-evolution snapshot generation for future classification.
+### Interface Layer
+- CLI
+- MCP stdio
+- MCP HTTP
+- dashboard
+- Markdown health reports
 
-### 3. Reflection Loop
+## Performance
 
-- `reflect_memory` auto-classifies task results.
-- Detects likely repeated mistakes from prior penalized memories.
-- Reinforces successes and punishes regressions.
-- Emits interactive save confirmation metadata for lead-agent workflows.
+### Measured Locally During Migration
 
-### 4. Feedback Loop
+| Scenario | Add Avg | Add p95 | Search Avg | Search p95 |
+| --- | ---: | ---: | ---: | ---: |
+| 1,000 memories | `762us` | `1053us` | `1.199ms` | `2.907ms` |
+| 5,000 memories | `1283us` | `2107us` | `1.447ms` | `6.596ms` |
+| 200k simulation | n/a | n/a | `7.062ms` | `8.491ms` |
 
-- `feedback_memory` updates memory learning state directly.
-- Taxonomy signals and hierarchy nodes now carry reinforcement metadata.
-- Repeated failures add avoid-pattern pressure and conflict score.
-- Feedback events are persisted for heatmaps, version history, and debugging.
-- Feedback weights are tuned by project activity so active projects reinforce and decay more aggressively.
-- Shared memories can propagate dampened reinforcement or punishment across related project containers.
+200k simulation details:
+```text
+insert=1.9562049s
+cold_broad_ms=7.249
+search_avg_ms=7.062
+search_p95_ms=8.491
+```
 
-### 5. Inspectability
+Analytics on the benchmark project:
+```text
+estimated_tokens_per_recall=323
+memory_health_score=85
+```
 
-- Every memory exposes debug traces.
-- CLI `inspect` surfaces memory versions and taxonomy reasoning.
-- Dashboard inspection drawer provides fast human inspection and one-click feedback.
+## Build, Test, And Release
 
-## Benchmarks
-
-Synthetic benchmark harness is built into the binary:
+### Local Validation
 
 ```bash
-$env:MEMOVYN_DATA_DIR='D:\memovyn\.memovyn-bench-hot-1000'
-cargo run --release -- benchmark memovyn-legend-hot-1000 --memories 1000 --query "shared brain regression sqlite mcp"
+npm run typecheck
+npm test
+npm run build
 ```
 
-Observed locally on this repository in `release` mode:
-
-```text
-add_count=1000 add_avg_us=928 add_p95_us=1240 search_avg_ms=1.302 search_p95_ms=2.935 hits=1000
-```
-
-Additional run at 5000 memories:
-
-```text
-add_count=5000 add_avg_us=1698 add_p95_us=2542 search_avg_ms=1.417 search_p95_ms=8.876 hits=5000
-```
-
-Ignored release-scale simulation for the in-memory search layer:
-
-```text
-200k scale simulation insert=1.4885244s search_avg_ms=27.126 search_p95_ms=29.878
-```
-
-These numbers reflect the richer taxonomy compiler, structured indexing, SQLite persistence path, weighted reinforcement metadata, incremental project insights, and the new search cache plus top-k materialization path. The biggest gains came from avoiding full `SearchHit` construction for every candidate and caching repeated query plans at the project boundary.
-
-## Why It Beats Typical Memory Layers
-
-| Capability | Memovyn | Typical vector-only memory layer |
-| --- | --- | --- |
-| Project isolation | Native | Often ad hoc |
-| Structured taxonomy | Multi-dimensional, hierarchical, explainable | Usually flat tags or none |
-| Learning loop | Reinforcement + punishment + avoid patterns | Rare or manual |
-| Shared state | Cross-project opt-in with project containers | Usually global blob |
-| Debuggability | Inspectable signals, relations, versions, traces | Black-box similarity scores |
-| Retrieval style | Index + summary + timeline + full detail | Usually single similarity list |
-| Local-first deployment | Yes | Sometimes cloud-first |
-| MCP-native workflow | Yes | Often wrapper-only |
-
-## Comparison Snapshot
-
-| System | Memovyn advantage |
-| --- | --- |
-| Mem0 | Stronger structured taxonomy, richer inspectability, no dependence on vector similarity for meaning |
-| Letta / Hindsight / Pulse OS | Tighter local-first footprint and explicit punishment loop for repeated mistakes |
-| Zep / Supermemory | More stateful project containers and human-readable taxonomy/debug layers |
-| Cognee | Better shared-brain semantics for coding-agent workflows and stronger MCP integration |
-
-## Validation
-
-Validated locally with:
+### Quick Runtime Smoke Tests
 
 ```bash
-cargo fmt
-cargo check
-cargo test
+node --experimental-strip-types src/cli.ts
+node --experimental-strip-types src/cli.ts add demo "We decided to use SQLite and BM25 for project memory search."
+node --experimental-strip-types src/cli.ts search demo sqlite --limit 5
 ```
 
-## Notes
+### Build Release Bundle
 
-- The upgraded codepath is backward-compatible with earlier Memovyn taxonomy JSON by providing defaults for newly added fields.
-- Memovyn now keeps incremental project insight caches and cached prepared statements in the hot path.
-- The next major optimization frontier is shrinking cold broad-query latency even further without depending on warm cache effects.
+```bash
+npm run build
+```
+
+### Build Single Executable (SEA)
+
+```bash
+npm run package:sea
+```
+
+### Cross-Platform CI
+
+GitHub Actions CI is defined in [ci.yml](/D:/memovyn/.github/workflows/ci.yml) and builds on:
+- Linux
+- macOS
+- Windows
+
+Each runner:
+- installs Node.js 24
+- installs dependencies
+- runs typecheck
+- runs tests
+- builds the bundle
+- packages a single executable
+- uploads the release artifact
+
+## Real-World Usage Recommendations
+
+Memovyn works best when used as the project memory system of record for an agent team.
+
+Recommended pattern:
+1. Save architecture decisions and constraints early.
+2. Reflect on failures immediately with `reflect` or `feedback`.
+3. Reinforce decisions that repeatedly prove correct.
+4. Review the Project Memory Health Report regularly.
+5. Enable the Ollama hook only when you want stronger multi-language hints or hybrid decomposition.
+6. Choose a forgetting policy deliberately:
+   - `off` for sensitive or very small projects
+   - `conservative` for early-stage teams
+   - `balanced` for most production use
+   - `aggressive` for high-churn large projects
+
+## Contributing
+
+See [CONTRIBUTING.md](/D:/memovyn/CONTRIBUTING.md).
+
+## Changelog
+
+See [CHANGELOG.md](/D:/memovyn/CHANGELOG.md).
+
+## License
+
+MIT

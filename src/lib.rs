@@ -4,6 +4,7 @@ pub mod dashboard;
 pub mod domain;
 pub mod error;
 pub mod mcp;
+pub mod model;
 pub mod search;
 pub mod storage;
 pub mod taxonomy;

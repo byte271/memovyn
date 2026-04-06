@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Memovyn</title>
+  <meta
+    name="description"
+    content="Memovyn is the local-first permanent memory framework for MCP-native coding agents."
+  >
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --panel: rgba(255, 255, 255, 0.05);
+      --panel-strong: rgba(255, 255, 255, 0.08);
+      --line: rgba(255, 255, 255, 0.12);
+      --text: #f5f5f7;
+      --muted: rgba(245, 245, 247, 0.66);
+      --shadow: 0 40px 120px rgba(0, 0, 0, 0.45);
+      --radius: 28px;
+      --max: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top, rgba(255, 255, 255, 0.12), transparent 28rem),
+        radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.08), transparent 20rem),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+      letter-spacing: -0.02em;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(var(--max), calc(100vw - 32px));
+      margin: 0 auto;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(18px);
+      background: rgba(0, 0, 0, 0.55);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .nav__inner {
+      width: min(var(--max), calc(100vw - 32px));
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 16px 0;
+    }
+
+    .brand {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text);
+      letter-spacing: -0.03em;
+    }
+
+    .nav__links {
+      display: flex;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .hero {
+      padding: 96px 0 56px;
+      text-align: center;
+    }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0 auto 20px;
+      max-width: 12ch;
+      font-size: clamp(3.5rem, 10vw, 7rem);
+      line-height: 0.94;
+      font-weight: 700;
+      letter-spacing: -0.06em;
+    }
+
+    .hero p {
+      max-width: 50rem;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: clamp(1.05rem, 2.5vw, 1.35rem);
+      line-height: 1.5;
+    }
+
+    .hero__actions {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 168px;
+      padding: 14px 22px;
+      border-radius: 999px;
+      font-size: 0.98rem;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button--primary {
+      background: #fff;
+      color: #000;
+      border-color: #fff;
+    }
+
+    .button--secondary {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+    }
+
+    .showcase {
+      margin: 36px auto 0;
+      padding: 28px;
+      border-radius: 36px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .showcase__frame {
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 18px;
+      min-height: 420px;
+    }
+
+    .window,
+    .panel {
+      border-radius: 26px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      overflow: hidden;
+    }
+
+    .window__bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+    }
+
+    .window__body {
+      padding: 22px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .terminal-line,
+    .memory-row,
+    .mini-card {
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      border-radius: 18px;
+    }
+
+    .terminal-line {
+      padding: 14px 16px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92rem;
+    }
+
+    .memory-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+    }
+
+    .memory-row strong,
+    .mini-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .memory-row span,
+    .mini-card span {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--text);
+      font-size: 0.84rem;
+      white-space: nowrap;
+    }
+
+    .panel {
+      padding: 20px;
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .panel h2,
+    .section h2 {
+      margin: 0;
+      font-size: clamp(1.7rem, 4vw, 2.4rem);
+      letter-spacing: -0.05em;
+    }
+
+    .panel p,
+    .section p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin: 72px 0;
+    }
+
+    .card {
+      padding: 24px;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      font-size: 1.18rem;
+      letter-spacing: -0.03em;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .section {
+      padding: 34px 0 74px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 30px;
+    }
+
+    .metric {
+      padding: 22px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: clamp(1.6rem, 4vw, 2.3rem);
+      letter-spacing: -0.05em;
+    }
+
+    .metric span {
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.94rem;
+    }
+
+    .footer {
+      padding: 28px 0 48px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.92rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 980px) {
+      .showcase__frame,
+      .grid,
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        padding-top: 72px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .nav__inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .nav__links {
+        flex-wrap: wrap;
+      }
+
+      h1 {
+        max-width: 8ch;
+      }
+
+      .showcase {
+        padding: 16px;
+        border-radius: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav__inner">
+      <a class="brand" href="#top">Memovyn</a>
+      <nav class="nav__links">
+        <a href="#product">Product</a>
+        <a href="#performance">Performance</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top" class="shell">
+    <section class="hero">
+      <p class="eyebrow">Permanent Memory For AI Builders</p>
+      <h1>The local-first memory layer for coding agents.</h1>
+      <p>
+        Memovyn gives Claude Code, Cursor, Codex, and MCP-native agents a shared, structured,
+        inspectable memory that stays private, stays fast, and keeps projects moving.
+      </p>
+      <div class="hero__actions">
+        <a class="button button--primary" href="#product">See The System</a>
+        <a class="button button--secondary" href="https://github.com/byte271/memovyn">View on GitHub</a>
+      </div>
+      <div class="showcase">
+        <div class="showcase__frame">
+          <section class="window">
+            <div class="window__bar">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span>memovyn / project context</span>
+            </div>
+            <div class="window__body">
+              <div class="terminal-line">$ memovyn context memovyn-core</div>
+              <div class="memory-row">
+                <div>
+                  <strong>Architecture decisions stay alive</strong>
+                  <span>Project-scoped recall with multi-dimensional taxonomy and persistent learning.</span>
+                </div>
+                <span class="chip">reinforced</span>
+              </div>
+              <div class="memory-row">
+                <div>
+                  <strong>Repeated mistakes become avoid rules</strong>
+                  <span>Failures are consolidated into durable retrieval signals instead of getting buried.</span>
+                </div>
+                <span class="chip">avoid pattern</span>
+              </div>
+              <div class="memory-row">
+                <div>
+                  <strong>Progressive disclosure saves tokens</strong>
+                  <span>Index, summary, timeline, and full detail keep context lean until the agent needs more.</span>
+                </div>
+                <span class="chip">token aware</span>
+              </div>
+            </div>
+          </section>
+
+          <aside class="panel">
+            <h2>Designed to feel invisible.</h2>
+            <p>
+              A black-and-white interface, restrained typography, and a product story centered on clarity,
+              privacy, and speed.
+            </p>
+            <div class="mini-card">
+              <div style="padding: 18px;">
+                <strong>Local-first by default</strong>
+                <span>SQLite-backed project memory with zero cloud dependency.</span>
+              </div>
+            </div>
+            <div class="mini-card">
+              <div style="padding: 18px;">
+                <strong>Explainable ranking</strong>
+                <span>Structured taxonomy, inspectable signals, and visible reinforcement state.</span>
+              </div>
+            </div>
+            <div class="mini-card">
+              <div style="padding: 18px;">
+                <strong>Built for MCP-native workflows</strong>
+                <span>One binary for CLI, MCP stdio, MCP HTTP, analytics, and dashboard.</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="product" class="section">
+      <div class="grid">
+        <article class="card">
+          <h3>Structured Memory</h3>
+          <p>
+            Rich taxonomy decomposition turns every memory into a durable, navigable object instead
+            of a flat note.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Learning That Compounds</h3>
+          <p>
+            Reinforcement, punishment, and consolidated avoid patterns push agents away from repeated
+            regressions and toward proven decisions.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Inspectable By Humans</h3>
+          <p>
+            Debug traces, history, analytics, and direct controls make memory visible instead of
+            mysterious.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section id="performance" class="section">
+      <h2>Performance that stays out of the way.</h2>
+      <p>
+        Built around fast add paths, aggressive ranking shortcuts, and progressive retrieval so the
+        memory layer helps the agent instead of becoming the bottleneck.
+      </p>
+      <div class="metrics">
+        <article class="metric">
+          <strong>&lt; 1ms</strong>
+          <span>Average add time on the 1k benchmark path.</span>
+        </article>
+        <article class="metric">
+          <strong>2.9ms</strong>
+          <span>Search p95 at 1k memories in steady-state release mode.</span>
+        </article>
+        <article class="metric">
+          <strong>8.9ms</strong>
+          <span>Search p95 at 5k memories with full ranking and analytics enabled.</span>
+        </article>
+        <article class="metric">
+          <strong>29.9ms</strong>
+          <span>200k steady-state search p95 in the large-scale simulation path.</span>
+        </article>
+      </div>
+    </section>
+
+
+  <footer class="shell footer">
+    <span>Memovyn</span>
+    <span>Local-first permanent memory for coding agents</span>
+  </footer>
+</body>
+</html>

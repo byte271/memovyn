@@ -50,6 +50,24 @@ async function archiveMemory(memoryId) {
   });
 }
 
+function mountThemeToggle() {
+  const button = document.getElementById("theme-toggle");
+  if (!button) return;
+
+  const stored = localStorage.getItem("memovyn-theme");
+  if (stored) {
+    document.documentElement.dataset.theme = stored;
+  } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    document.documentElement.dataset.theme = "dark";
+  }
+
+  button.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("memovyn-theme", next);
+  });
+}
+
 function renderCard(item, index) {
   const labels = (item.labels || [])
     .slice(0, 6)
@@ -93,8 +111,19 @@ function renderAnalyticsLists(analytics) {
     .slice(-10)
     .map((bucket) => `<li><span>${bucket.bucket}</span><strong>${bucket.conflicts} conflicts / ${bucket.recalls} repeated</strong></li>`)
     .join("");
+  const impactful = (analytics.most_impactful || [])
+    .slice(0, 6)
+    .map((item) => `<li><span>${item.headline}<small>${item.summary}</small></span><strong>${item.score.toFixed(2)}</strong></li>`)
+    .join("");
+  const evolution = (analytics.evolution_trend || [])
+    .slice(-10)
+    .map((bucket) => `<li><span>${bucket.bucket}</span><strong>${bucket.memories} positive / ${bucket.conflicts} negative</strong></li>`)
+    .join("");
   const insights = (analytics.behavior_insights || [])
     .map((insight) => `<li>${insight}</li>`)
+    .join("");
+  const suggestions = (analytics.proactive_suggestions || [])
+    .map((suggestion) => `<li>${suggestion}</li>`)
     .join("");
 
   return `
@@ -115,20 +144,35 @@ function renderAnalyticsLists(analytics) {
       <ul class="label-list">${punished || `<li><span>No punishment yet</span><strong>0</strong></li>`}</ul>
     </section>
     <section class="analytics-card">
+      <h3>Most impactful</h3>
+      <ul class="label-list">${impactful || `<li><span>No impact data yet</span><strong>0</strong></li>`}</ul>
+    </section>
+    <section class="analytics-card">
       <h3>Growth over time</h3>
       <ul class="label-list">${growth || `<li><span>No history yet</span><strong>0</strong></li>`}</ul>
+    </section>
+    <section class="analytics-card">
+      <h3>Agent evolution trend</h3>
+      <ul class="label-list">${evolution || `<li><span>No feedback trend yet</span><strong>0</strong></li>`}</ul>
     </section>
     <section class="analytics-card">
       <h3>Conflict heatmap</h3>
       <ul class="label-list">${heatmap || `<li><span>No conflicts yet</span><strong>0</strong></li>`}</ul>
     </section>
     <section class="analytics-card">
+      <h3>Proactive suggestions</h3>
+      <ul class="note-list">${suggestions || `<li>No actions suggested right now</li>`}</ul>
+    </section>
+    <section class="analytics-card">
       <h3>Token savings</h3>
       <div class="stats-row">
         <div class="stat-chip"><strong>${analytics.total_token_savings}</strong><span>project</span></div>
+        <div class="stat-chip"><strong>${analytics.estimated_tokens_per_recall}</strong><span>per recall</span></div>
         <div class="stat-chip"><strong>${analytics.session_token_savings}</strong><span>session</span></div>
         <div class="stat-chip"><strong>${analytics.total_queries}</strong><span>queries</span></div>
         <div class="stat-chip"><strong>${analytics.session_queries}</strong><span>session queries</span></div>
+        <div class="stat-chip"><strong>${analytics.memory_health_score}</strong><span>health</span></div>
+        <div class="stat-chip"><strong>${analytics.learning_impact_score}</strong><span>learning impact</span></div>
       </div>
     </section>
   `;
@@ -152,6 +196,9 @@ async function mountProjectView() {
   let currentInspectionId = null;
 
   async function refreshAnalytics() {
+    if (analyticsGrid) {
+      analyticsGrid.innerHTML = `<p class="analytics-placeholder">Refreshing analytics…</p>`;
+    }
     const payload = await fetchAnalytics(projectId);
     const analytics = payload.analytics;
     if (analyticsGrid) {
@@ -167,6 +214,7 @@ async function mountProjectView() {
   }
 
   async function refreshMemories() {
+    viewport.dataset.loading = "true";
     const visibleCount = Math.ceil(viewport.clientHeight / rowHeight) + overscan * 2;
     const start = Math.max(0, Math.floor(viewport.scrollTop / rowHeight) - overscan);
     const payload = await fetchMemories(projectId, query, start, visibleCount);
@@ -175,6 +223,7 @@ async function mountProjectView() {
     spacer.innerHTML = payload.items
       .map((item, index) => renderCard(item, start + index))
       .join("");
+    viewport.dataset.loading = "false";
   }
 
   async function showInspection(memoryId) {
@@ -197,6 +246,7 @@ async function mountProjectView() {
       <p><strong>Dimensions:</strong> ${inspection.explanation[2] ?? ""}</p>
       <p><strong>Relations:</strong> ${inspection.explanation[3] ?? ""}</p>
       <p><strong>Learning:</strong> ${learning}</p>
+      <p><strong>Provenance:</strong> ${(inspection.provenance || []).join(" | ")}</p>
       <p><strong>Versions:</strong> ${versions || "v1"}</p>
       <div class="feedback-actions">
         <button data-feedback="success">Reinforce</button>
@@ -226,7 +276,12 @@ async function mountProjectView() {
     if (outcome === "archive") {
       await archiveMemory(currentInspectionId);
     } else {
-      await sendFeedback(currentInspectionId, outcome, outcome === "regression");
+      const payload = await sendFeedback(currentInspectionId, outcome, outcome === "regression");
+      const hints = payload.feedback?.reconciliation_hints || [];
+      if (hints.length && drawer) {
+        const hintMarkup = hints.map((hint) => `<li>${hint}</li>`).join("");
+        drawer.insertAdjacentHTML("beforeend", `<ul class="note-list">${hintMarkup}</ul>`);
+      }
     }
     await Promise.all([showInspection(currentInspectionId), refreshAnalytics(), refreshMemories()]);
   });
@@ -243,3 +298,5 @@ async function mountProjectView() {
 mountProjectView().catch((error) => {
   console.error(error);
 });
+
+mountThemeToggle();

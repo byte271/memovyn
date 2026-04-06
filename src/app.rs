@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use crate::config::Config;
+use crate::config::{Config, ForgettingPolicy};
 use crate::domain::{
     AddMemoryRequest, AnalyticsSnapshot, ArchiveRequest, ArchiveResponse, ExportBundle,
     FeedbackOutcome, FeedbackRequest, FeedbackResponse, InteractiveAction, InteractivePrompt,
@@ -10,6 +10,7 @@ use crate::domain::{
     ReflectionResponse, SearchFilters, SearchRequest, SearchResponse, TaxonomySummary,
 };
 use crate::error::Result;
+use crate::model::ModelHook;
 use crate::search::SearchIndex;
 use crate::storage::Database;
 use crate::taxonomy::TaxonomyEngine;
@@ -21,6 +22,7 @@ pub struct Memovyn {
     pub config: Config,
     database: Database,
     taxonomy: TaxonomyEngine,
+    model_hook: ModelHook,
     search: SearchIndex,
     session: SessionStats,
 }
@@ -37,10 +39,12 @@ impl Memovyn {
         let database = Database::open(config.database_path())?;
         let records = database.load_all_memories()?;
         let search = SearchIndex::new(records);
+        let model_hook = ModelHook::from_config(&config);
         Ok(Self {
             config,
             database,
             taxonomy: TaxonomyEngine::new(),
+            model_hook,
             search,
             session: SessionStats::default(),
         })
@@ -54,9 +58,15 @@ impl Memovyn {
 
         let now = OffsetDateTime::now_utc();
         let evolution = self.search.taxonomy_feedback(&request.project_id);
-        let (content, taxonomy) =
-            self.taxonomy
-                .decompose_with_context(&request.content, &request.metadata, &evolution);
+        let guidance = self
+            .model_hook
+            .classify(&request.content, &request.metadata, &evolution);
+        let (content, taxonomy) = self.taxonomy.decompose_with_context_and_guidance(
+            &request.content,
+            &request.metadata,
+            &evolution,
+            guidance.as_ref(),
+        );
         let record = MemoryRecord {
             id: Uuid::now_v7(),
             project_id: request.project_id,
@@ -216,12 +226,45 @@ impl Memovyn {
             } else {
                 Vec::new()
             };
+        let archived_memories = if matches!(
+            request.outcome,
+            FeedbackOutcome::Success | FeedbackOutcome::Partial
+        ) && memory_count >= 512
+            && query_count >= 96
+        {
+            // Only mature, active projects get automatic forgetting. Small projects
+            // should stay fully inspectable until memory pressure is meaningful.
+            let archive_limit = match self.config.forgetting_policy {
+                ForgettingPolicy::Off => 0,
+                ForgettingPolicy::Conservative => 1,
+                ForgettingPolicy::Balanced => (activity_score.ceil() as usize).clamp(1, 3),
+                ForgettingPolicy::Aggressive => (activity_score.ceil() as usize).clamp(2, 6),
+            };
+            if archive_limit == 0 {
+                Vec::new()
+            } else {
+                self.database
+                    .archive_low_value_memories(&seed_memory.project_id, archive_limit)?
+            }
+        } else {
+            Vec::new()
+        };
+        for archived in &archived_memories {
+            self.search.refresh(archived.clone());
+        }
+        let reconciliation_hints = build_reconciliation_hints(
+            &memory,
+            conflict_detected,
+            &influenced_memories,
+            archived_memories.len(),
+        );
         Ok(FeedbackResponse {
             avoid_patterns: memory.taxonomy.avoid_patterns.clone(),
             memory,
             conflict_detected,
             influenced_memories,
             learning_delta: request.weight * (1.0 + activity_score * 0.14),
+            reconciliation_hints,
         })
     }
 
@@ -236,7 +279,7 @@ impl Memovyn {
         );
 
         for hit in &response.detail_layer {
-            let tokens_saved = hit.content.len().saturating_sub(hit.summary.len());
+            let tokens_saved = estimate_token_savings(hit);
             let _ = self
                 .database
                 .record_recall(hit.memory_id, &request.query, tokens_saved);
@@ -320,9 +363,18 @@ impl Memovyn {
         analytics.label_hotspots = label_hotspots;
         analytics.relation_hotspots = relation_hotspots;
         analytics.conflict_count = analytics.conflict_count.max(conflict_count);
+        analytics.estimated_tokens_per_recall = if analytics.total_queries == 0 {
+            0
+        } else {
+            analytics.total_token_savings / analytics.total_queries
+        };
         analytics.session_queries = self.session.queries.load(Ordering::Relaxed);
         analytics.session_token_savings = self.session.token_savings.load(Ordering::Relaxed);
+        analytics.memory_health_score = compute_memory_health_score(&analytics);
+        analytics.learning_impact_score = compute_learning_impact_score(&analytics);
+        analytics.agent_evolution_timeline = analytics.evolution_trend.clone();
         analytics.behavior_insights = build_behavior_insights(&analytics);
+        analytics.proactive_suggestions = build_proactive_suggestions(&analytics);
         Ok(analytics)
     }
 
@@ -370,10 +422,12 @@ impl Memovyn {
                 memory.learning.conflict_score
             ),
         ];
+        let provenance = build_provenance(&memory);
         Ok(Some(MemoryInspection {
             memory,
             versions,
             explanation,
+            provenance,
         }))
     }
 
@@ -436,12 +490,15 @@ impl Memovyn {
     pub fn analytics_markdown(&self, project_id: &str) -> Result<String> {
         let analytics = self.analytics(project_id)?;
         let mut markdown = format!(
-            "# Memovyn Analytics for `{}`\n\n- Total memories: {}\n- Total queries: {}\n- Project token savings: {}\n- Session token savings: {}\n- Conflicts: {}\n- Reinforced memories: {}\n- Penalized memories: {}\n\n",
+            "# Project Memory Health Report for `{}`\n\n- Total memories: {}\n- Total queries: {}\n- Project token savings: {}\n- Estimated tokens saved per recall: {}\n- Session token savings: {}\n- Memory health score: {}\n- Learning impact score: {}\n- Conflicts: {}\n- Reinforced memories: {}\n- Penalized memories: {}\n\n",
             analytics.project_id,
             analytics.total_memories,
             analytics.total_queries,
             analytics.total_token_savings,
+            analytics.estimated_tokens_per_recall,
             analytics.session_token_savings,
+            analytics.memory_health_score,
+            analytics.learning_impact_score,
             analytics.conflict_count,
             analytics.reinforced_memories,
             analytics.penalized_memories
@@ -453,12 +510,35 @@ impl Memovyn {
             }
             markdown.push('\n');
         }
+        if !analytics.proactive_suggestions.is_empty() {
+            markdown.push_str("## Proactive Suggestions\n");
+            for suggestion in &analytics.proactive_suggestions {
+                markdown.push_str(&format!("- {}\n", suggestion));
+            }
+            markdown.push('\n');
+        }
         markdown.push_str("## Top Recalled Memories\n");
         for memory in analytics.most_recalled.iter().take(10) {
             markdown.push_str(&format!(
                 "- **{}**: {} (recalled {} times)\n",
                 memory.headline, memory.summary, memory.access_count
             ));
+        }
+        markdown.push_str("\n## Most Impactful Memories\n");
+        for memory in analytics.most_impactful.iter().take(8) {
+            markdown.push_str(&format!(
+                "- **{}**: score {:.2}, failures {}, recalls {}\n",
+                memory.headline, memory.score, memory.failure_count, memory.access_count
+            ));
+        }
+        if !analytics.agent_evolution_timeline.is_empty() {
+            markdown.push_str("\n## Agent Evolution Timeline\n");
+            for bucket in analytics.agent_evolution_timeline.iter().take(12) {
+                markdown.push_str(&format!(
+                    "- **{}**: positive={} negative={}\n",
+                    bucket.bucket, bucket.memories, bucket.conflicts
+                ));
+            }
         }
         Ok(markdown)
     }
@@ -616,7 +696,7 @@ fn build_debugging_notes(active_conflicts: &[String]) -> Vec<String> {
 fn build_behavior_insights(analytics: &AnalyticsSnapshot) -> Vec<String> {
     let mut insights = Vec::new();
     if analytics.total_queries > 0 {
-        let avg_tokens = analytics.total_token_savings as f64 / analytics.total_queries as f64;
+        let avg_tokens = analytics.estimated_tokens_per_recall as f64;
         insights.push(format!(
             "Memovyn is saving an estimated {:.0} tokens per recall on average in this project.",
             avg_tokens
@@ -636,7 +716,11 @@ fn build_behavior_insights(analytics: &AnalyticsSnapshot) -> Vec<String> {
             label, multiple
         ));
     }
-    if let Some(memory) = analytics.most_punished.first() {
+    if let Some(memory) = analytics
+        .most_punished
+        .iter()
+        .find(|memory| memory.failure_count > 0 || memory.score > 0.0)
+    {
         insights.push(format!(
             "The most punished memory is `{}` with {} failures and score {:.2}.",
             memory.headline, memory.failure_count, memory.score
@@ -648,7 +732,102 @@ fn build_behavior_insights(analytics: &AnalyticsSnapshot) -> Vec<String> {
             analytics.conflict_count
         ));
     }
+    insights.push(format!(
+        "Learning Impact Score is {} based on reinforcement depth, recall reuse, and conflict reduction.",
+        analytics.learning_impact_score
+    ));
+    if let Some(memory) = analytics.most_impactful.first() {
+        insights.push(format!(
+            "`{}` is currently the most impactful memory with a blended score of {:.2}.",
+            memory.headline, memory.score
+        ));
+    }
     insights
+}
+
+fn build_proactive_suggestions(analytics: &AnalyticsSnapshot) -> Vec<String> {
+    let mut suggestions = Vec::new();
+    if analytics.memory_health_score < 70 {
+        suggestions.push(
+            "Run the Project Memory Health Report and archive low-value notes to reduce recall noise."
+                .to_string(),
+        );
+    }
+    if analytics.conflict_count > analytics.reinforced_memories / 2 {
+        suggestions.push(
+            "Promote the most reinforced architecture decisions into project priors to counter repeated conflicts."
+                .to_string(),
+        );
+    }
+    if analytics.estimated_tokens_per_recall < 30 {
+        suggestions.push(
+            "Review summary compression and prefer progressive disclosure before injecting full memory bodies."
+                .to_string(),
+        );
+    }
+    if analytics.learning_impact_score < 60 {
+        suggestions.push(
+            "Increase explicit feedback after successful tasks so reinforced patterns become decisive project priors."
+                .to_string(),
+        );
+    }
+    if let Some(memory) = analytics
+        .most_punished
+        .iter()
+        .find(|memory| memory.failure_count > 0 || memory.score > 0.0)
+    {
+        suggestions.push(format!(
+            "Lead Agent should review `{}` and decide whether to reconcile, rewrite, or archive it.",
+            memory.headline
+        ));
+    }
+    suggestions
+}
+
+fn build_reconciliation_hints(
+    memory: &MemoryRecord,
+    conflict_detected: bool,
+    influenced_memories: &[Uuid],
+    archived_count: usize,
+) -> Vec<String> {
+    let mut hints = Vec::new();
+    if conflict_detected {
+        hints.push(format!(
+            "Reconcile the active conflict by comparing this memory against the current `{}` project prior.",
+            memory.taxonomy.main_category
+        ));
+    }
+    if memory.learning.failure_count >= 2 {
+        hints.push(format!(
+            "Promote `{}` into a stronger avoid-pattern rule for the Lead Agent.",
+            memory.headline
+        ));
+    }
+    if memory.learning.success_score >= 2.0 {
+        hints.push(format!(
+            "Solidify `{}` as a project-level prior so future classifications inherit it automatically.",
+            memory.taxonomy.main_category
+        ));
+    }
+    if memory.taxonomy.metadata.model_confidence >= 0.7 {
+        hints.push(format!(
+            "Hybrid classifier confidence is {:.2}; treat this memory as a strong candidate for Lead Agent confirmation.",
+            memory.taxonomy.metadata.model_confidence
+        ));
+    }
+    if !influenced_memories.is_empty() {
+        hints.push(format!(
+            "Cross-project influence touched {} related memories; review them before the next release.",
+            influenced_memories.len()
+        ));
+    }
+    if archived_count > 0 {
+        hints.push(format!(
+            "Strategic forgetting archived {} low-value memories to keep recall quality high.",
+            archived_count
+        ));
+    }
+    hints
 }
 
 fn consolidated_avoid_pattern(memory: &MemoryRecord) -> String {
@@ -660,6 +839,105 @@ fn consolidated_avoid_pattern(memory: &MemoryRecord) -> String {
         .collect::<Vec<_>>()
         .join("-");
     format!("avoid:{}:{}", memory.taxonomy.main_category, stem)
+}
+
+fn build_provenance(memory: &MemoryRecord) -> Vec<String> {
+    let mut provenance = vec![
+        format!("created_at={}", memory.created_at),
+        format!("updated_at={}", memory.updated_at),
+        format!("content_hash={}", memory.content_hash),
+        format!("version={}", memory.version),
+        format!(
+            "classifier_backend={}",
+            memory.taxonomy.metadata.classifier_backend
+        ),
+        format!(
+            "model_confidence={:.2}",
+            memory.taxonomy.metadata.model_confidence
+        ),
+    ];
+    if let Some(source) = &memory.metadata.source {
+        provenance.push(format!("source={source}"));
+    }
+    if let Some(actor) = &memory.metadata.actor {
+        provenance.push(format!("actor={actor}"));
+    }
+    if let Some(language) = &memory.metadata.language {
+        provenance.push(format!("language={language}"));
+    }
+    if let Some(archived) = memory.metadata.extra.get("archived") {
+        provenance.push(format!("archived={archived}"));
+    }
+    provenance
+}
+
+fn compute_memory_health_score(analytics: &AnalyticsSnapshot) -> u8 {
+    if analytics.total_memories == 0 {
+        return 100;
+    }
+    let reinforced_ratio = analytics.reinforced_memories as f32 / analytics.total_memories as f32;
+    let conflict_ratio = analytics.conflict_count as f32 / analytics.total_memories as f32;
+    let token_ratio = (analytics.estimated_tokens_per_recall as f32 / 100.0).clamp(0.0, 1.0);
+    let low_penalty_bonus = if analytics.penalized_memories == 0 {
+        10.0
+    } else {
+        0.0
+    };
+    let query_bonus = if analytics.total_queries > 0 {
+        10.0
+    } else {
+        0.0
+    };
+    let score = 25.0
+        + (reinforced_ratio * 25.0)
+        + ((1.0 - conflict_ratio).clamp(0.0, 1.0) * 25.0)
+        + (token_ratio * 15.0)
+        + low_penalty_bonus
+        + query_bonus;
+    score.round().clamp(0.0, 100.0) as u8
+}
+
+fn compute_learning_impact_score(analytics: &AnalyticsSnapshot) -> u8 {
+    if analytics.total_memories == 0 {
+        return 0;
+    }
+    let impactful_ratio = analytics.most_impactful.len() as f32 / analytics.total_memories as f32;
+    let reinforced_ratio = analytics.reinforced_memories as f32 / analytics.total_memories as f32;
+    let conflict_drag = analytics.conflict_count as f32 / analytics.total_memories as f32;
+    let score = 20.0
+        + (impactful_ratio.min(0.2) * 120.0)
+        + (reinforced_ratio * 35.0)
+        + ((1.0 - conflict_drag).clamp(0.0, 1.0) * 25.0);
+    score.round().clamp(0.0, 100.0) as u8
+}
+
+fn estimate_token_savings(hit: &crate::domain::SearchHit) -> usize {
+    // We estimate the savings between sending the full memory body and sending a
+    // progressive-disclosure capsule built from the headline, category, and a few
+    // precise labels. This is much closer to real agent usage than raw string deltas.
+    let full_tokens = estimate_tokens(&format!(
+        "{} {} {} {}",
+        hit.content,
+        hit.summary,
+        hit.main_category,
+        hit.labels.join(" ")
+    ));
+    let compressed_tokens = estimate_tokens(&format!(
+        "{} {} {}",
+        hit.headline,
+        hit.main_category,
+        hit.labels
+            .iter()
+            .take(4)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" ")
+    ));
+    full_tokens.saturating_sub(compressed_tokens)
+}
+
+fn estimate_tokens(text: &str) -> usize {
+    ((text.len() as f32) / 4.0).ceil() as usize
 }
 
 fn percentile_u64(values: &mut [u64], percentile: f32) -> u64 {

@@ -9,46 +9,60 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: node-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    name: Build And Test
-    runs-on: ubuntu-latest
+    name: Build And Test (${{ matrix.os }})
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-latest
+            artifact_name: memovyn-linux-x86_64
+            artifact_path: release/memovyn
+          - os: macos
+            runner: macos-latest
+            artifact_name: memovyn-macos-x86_64
+            artifact_path: release/memovyn
+          - os: windows
+            runner: windows-latest
+            artifact_name: memovyn-windows-x86_64.exe
+            artifact_path: release/memovyn.exe
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install stable Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
         with:
-          components: rustfmt
+          node-version: 24
+          cache: npm
 
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check formatting
-        run: cargo fmt --check
+      - name: Install dependencies
+        run: npm install
 
       - name: Typecheck
-        run: cargo check --all-targets
+        run: npm run typecheck
 
       - name: Run tests
-        run: cargo test --all-targets
+        run: npm test
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Build bundle
+        run: npm run build
+
+      - name: Build single executable
+        run: npm run package:sea
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: memovyn-linux-x86_64
-          path: target/release/memovyn
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
           if-no-files-found: error

@@ -10,6 +10,7 @@ use crate::domain::{
     DimensionBreakdown, HierarchyNode, MemoryMetadata, SensitiveSpan, TaxonomyDebugView,
     TaxonomyDecomposition, TaxonomyMetadata, TaxonomyRelation, TaxonomySignal,
 };
+use crate::model::ModelGuidance;
 
 pub const TAXONOMY_VERSION: &str = "2026.04.legendary";
 
@@ -17,6 +18,7 @@ pub const TAXONOMY_VERSION: &str = "2026.04.legendary";
 pub struct TaxonomyEvolutionSnapshot {
     pub prior_labels: Vec<String>,
     pub reinforced_labels: Vec<String>,
+    pub solidified_priors: Vec<String>,
     pub avoid_patterns: Vec<String>,
     pub project_terms: Vec<String>,
 }
@@ -188,6 +190,16 @@ impl TaxonomyEngine {
         metadata: &MemoryMetadata,
         evolution: &TaxonomyEvolutionSnapshot,
     ) -> (String, TaxonomyDecomposition) {
+        self.decompose_with_context_and_guidance(content, metadata, evolution, None)
+    }
+
+    pub fn decompose_with_context_and_guidance(
+        &self,
+        content: &str,
+        metadata: &MemoryMetadata,
+        evolution: &TaxonomyEvolutionSnapshot,
+        guidance: Option<&ModelGuidance>,
+    ) -> (String, TaxonomyDecomposition) {
         let (sanitized, redactions, sensitivity_tags) = redact_sensitive(content);
         let tokens = tokenize(&sanitized);
         let token_count = tokens.len().max(1);
@@ -250,6 +262,26 @@ impl TaxonomyEngine {
                 scores[idx] += 0.55;
                 context_hits[idx].push("reinforced-prior".to_string());
             }
+            // Solidified priors are stronger than ordinary reinforced labels: they
+            // represent patterns that have repeatedly proven useful enough to steer
+            // future classification for the whole project.
+            if evolution
+                .solidified_priors
+                .iter()
+                .any(|label| label == seed.id)
+            {
+                scores[idx] += 1.25;
+                context_hits[idx].push("solidified-project-prior".to_string());
+            }
+            if seed.dependencies.iter().any(|dependency| {
+                evolution
+                    .solidified_priors
+                    .iter()
+                    .any(|label| label == dependency)
+            }) {
+                scores[idx] += 0.35;
+                context_hits[idx].push("solidified-dependency-prior".to_string());
+            }
             if evolution
                 .avoid_patterns
                 .iter()
@@ -264,6 +296,28 @@ impl TaxonomyEngine {
             }) {
                 scores[idx] += 0.12;
                 context_hits[idx].push("project-lexicon".to_string());
+            }
+            if let Some(guidance) = guidance {
+                if guidance
+                    .main_category
+                    .as_deref()
+                    .is_some_and(|category| category == seed.id)
+                {
+                    scores[idx] += 1.15;
+                    context_hits[idx].push("model-main-category".to_string());
+                }
+                if guidance.boosted_labels.iter().any(|label| label == seed.id) {
+                    scores[idx] += 0.72;
+                    context_hits[idx].push("model-guidance-label".to_string());
+                }
+                if guidance
+                    .language_hint
+                    .as_deref()
+                    .is_some_and(|language| language.eq_ignore_ascii_case(seed.id))
+                {
+                    scores[idx] += 0.8;
+                    context_hits[idx].push("model-language-hint".to_string());
+                }
             }
         }
 
@@ -287,8 +341,19 @@ impl TaxonomyEngine {
         let signals = build_signals(&ranked, top_score);
         let headline = headline(&sanitized, &tokens);
         let summary = summary(&headline, &dimensions, &relations);
-        let debug = build_debug_view(&ranked);
-        let avoid_patterns = ranked
+        let mut debug = build_debug_view(&ranked);
+        if let Some(guidance) = guidance {
+            debug
+                .context_hints
+                .push(format!("classifier-backend:{}", guidance.backend));
+            debug.context_hints.extend(
+                guidance
+                    .notes
+                    .iter()
+                    .map(|note| format!("model-note:{note}")),
+            );
+        }
+        let mut avoid_patterns = ranked
             .iter()
             .filter(|candidate| {
                 matches!(candidate.seed.id, "avoid_pattern" | "regression" | "risk")
@@ -296,7 +361,13 @@ impl TaxonomyEngine {
             .take(6)
             .map(|candidate| candidate.seed.id.to_string())
             .collect::<Vec<_>>();
-        let reinforce_patterns = ranked
+        if let Some(guidance) = guidance {
+            avoid_patterns.extend(guidance.avoid_patterns.iter().cloned());
+        }
+        avoid_patterns.sort_unstable();
+        avoid_patterns.dedup();
+
+        let mut reinforce_patterns = ranked
             .iter()
             .filter(|candidate| {
                 matches!(
@@ -307,6 +378,11 @@ impl TaxonomyEngine {
             .take(6)
             .map(|candidate| candidate.seed.id.to_string())
             .collect::<Vec<_>>();
+        if let Some(guidance) = guidance {
+            reinforce_patterns.extend(guidance.reinforce_patterns.iter().cloned());
+        }
+        reinforce_patterns.sort_unstable();
+        reinforce_patterns.dedup();
 
         let mut labels = build_multi_labels(
             &ranked,
@@ -356,7 +432,15 @@ impl TaxonomyEngine {
                 language_hint: metadata
                     .language
                     .clone()
+                    .or_else(|| guidance.and_then(|guidance| guidance.language_hint.clone()))
                     .unwrap_or_else(|| detect_language_hint(&tokens).to_string()),
+                classifier_backend: guidance
+                    .map(|guidance| guidance.backend.clone())
+                    .unwrap_or_else(|| "algorithm".to_string()),
+                classifier_notes: guidance
+                    .map(|guidance| guidance.notes.clone())
+                    .unwrap_or_default(),
+                model_confidence: guidance.map(|guidance| guidance.confidence).unwrap_or(0.0),
                 token_count,
                 signal_count: ranked
                     .iter()
@@ -1717,6 +1801,7 @@ mod tests {
         let snapshot = TaxonomyEvolutionSnapshot {
             prior_labels: vec!["collaboration".to_string()],
             reinforced_labels: vec!["cross_project".to_string()],
+            solidified_priors: vec!["architecture".to_string()],
             avoid_patterns: vec!["regression".to_string()],
             project_terms: vec!["shared".to_string(), "brain".to_string()],
         };

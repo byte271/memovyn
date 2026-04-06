@@ -1,6 +1,12 @@
 
 /target
 
+/dist
+/release
+/node_modules
+/sea-config.json
+/sea-prep.blob
+
 /.memovyn*
 /.memovyn-bench-hot
 /.memovyn-bench-hot-1000

@@ -10,6 +10,17 @@
   --radius: 24px;
 }
 
+:root[data-theme="dark"] {
+  --bg: #0b0f12;
+  --panel: rgba(19, 24, 28, 0.88);
+  --ink: #eef4f6;
+  --muted: #9cafb6;
+  --line: rgba(255, 255, 255, 0.1);
+  --accent: #7be0d4;
+  --accent-2: #ffb680;
+  --shadow: 0 22px 70px rgba(0, 0, 0, 0.32);
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -17,7 +28,7 @@ body {
   background:
     radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 28rem),
     radial-gradient(circle at bottom right, rgba(249, 115, 22, 0.16), transparent 24rem),
-    linear-gradient(180deg, #fbf7ef, #f1ebdf);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), var(--bg));
   color: var(--ink);
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
 }
@@ -36,6 +47,14 @@ body {
 
 .hero {
   padding: 2rem 0 1rem;
+}
+
+.hero__controls,
+.sidebar__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
 }
 
 .eyebrow {
@@ -124,6 +143,16 @@ h1 {
   color: var(--accent);
   text-decoration: none;
   font-weight: 700;
+}
+
+.theme-toggle {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
 }
 
 .context-card {
@@ -269,6 +298,10 @@ h1 {
   border: 1px solid var(--line);
   overflow: auto;
   padding: 0.75rem;
+}
+
+.memory-viewport[data-loading="true"] {
+  opacity: 0.82;
 }
 
 .inspection-drawer {

@@ -87,7 +87,10 @@ async fn index(State(app): State<Arc<Memovyn>>) -> Result<Html<String>, (StatusC
         <body>
             <main class="shell">
                 <section class="hero">
-                    <p class="eyebrow">Memovyn v0.1</p>
+                    <div class="hero__controls">
+                        <button id="theme-toggle" class="theme-toggle" type="button">Toggle Theme</button>
+                    </div>
+                    <p class="eyebrow">Memovyn v0.2</p>
                     <h1>Permanent memory for local-first coding agents.</h1>
                     <p class="lede">Taxonomy-native recall, regression avoidance, and progressive context assembly in one static binary.</p>
                 </section>
@@ -148,7 +151,10 @@ async fn project_page(
         <body data-project-id="{project_id}">
             <main class="shell shell--project">
                 <aside class="sidebar panel">
-                    <a href="/" class="back-link">Back</a>
+                    <div class="sidebar__top">
+                        <a href="/" class="back-link">Back</a>
+                        <button id="theme-toggle" class="theme-toggle" type="button">Toggle Theme</button>
+                    </div>
                     <p class="eyebrow">Project memory container</p>
                     <h1>{project_id}</h1>
                     <div class="stats-row">
@@ -156,6 +162,7 @@ async fn project_page(
                         <div class="stat-chip"><strong>{conflicts}</strong><span>conflicts</span></div>
                         <div class="stat-chip"><strong>{token_savings}</strong><span>tokens saved</span></div>
                         <div class="stat-chip"><strong>{session_tokens}</strong><span>session savings</span></div>
+                        <div class="stat-chip"><strong>{health_score}</strong><span>health score</span></div>
                     </div>
                     <pre class="context-card">{ready_context}</pre>
                     <h2>Taxonomy heatmap</h2>
@@ -188,7 +195,7 @@ async fn project_page(
                             </div>
                             <div class="export-links">
                                 <a class="export-link" href="/api/projects/{project_id}/analytics.csv">Export CSV</a>
-                                <a class="export-link" href="/api/projects/{project_id}/analytics.md">Export Markdown</a>
+                                <a class="export-link" href="/api/projects/{project_id}/analytics.md">Project Memory Health Report</a>
                             </div>
                         </div>
                         <div id="analytics-grid" class="analytics-grid">
@@ -210,6 +217,7 @@ async fn project_page(
         conflicts = analytics.conflict_count,
         token_savings = analytics.total_token_savings,
         session_tokens = analytics.session_token_savings,
+        health_score = analytics.memory_health_score,
         ready_context = html_escape(&context.ready_context),
         labels = labels,
         relations = relations,

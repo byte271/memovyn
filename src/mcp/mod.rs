@@ -100,7 +100,7 @@ async fn dispatch(app: Arc<Memovyn>, request: JsonRpcRequest) -> JsonRpcResponse
     let result = match request.method.as_str() {
         "initialize" => Ok(serde_json::json!({
             "protocolVersion": "2025-11-05",
-            "serverInfo": { "name": "memovyn", "version": "0.1.0" },
+            "serverInfo": { "name": "memovyn", "version": env!("CARGO_PKG_VERSION") },
             "capabilities": {
                 "tools": { "listChanged": false },
                 "logging": {},
@@ -138,7 +138,7 @@ fn tool_list() -> Value {
         "tools": [
             {
                 "name": "add_memory",
-                "description": "Add a project-scoped permanent memory and auto-classify it with Memovyn's multi-dimensional taxonomy compiler.",
+                "description": "Add a project-scoped permanent memory and auto-classify it with Memovyn's taxonomy engine, optionally augmented by the Memovyn_0.1B Ollama hook.",
                 "inputSchema": {
                     "type": "object",
                     "required": ["project_id", "content"],
@@ -177,7 +177,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "reflect_memory",
-                "description": "Reflect on a task result, reinforce good outcomes, surface avoid-patterns, and return interactive save confirmation metadata.",
+                "description": "Reflect on a task result, reinforce good outcomes, surface avoid-patterns, and return interactive save confirmation metadata plus action hints.",
                 "inputSchema": {
                     "type": "object",
                     "required": ["project_id", "task_result", "outcome"],
@@ -219,7 +219,7 @@ fn tool_list() -> Value {
             },
             {
                 "name": "get_project_analytics",
-                "description": "Return visible analytics showing what Memovyn remembers, how often it is recalled, conflict heatmaps, and estimated token savings.",
+                "description": "Return visible analytics showing what Memovyn remembers, how often it is recalled, conflict heatmaps, Learning Impact Score, and estimated token savings.",
                 "inputSchema": {
                     "type": "object",
                     "required": ["project_id"],
@@ -313,19 +313,46 @@ async fn handle_tool_call(
         }
     };
 
-    Ok(serde_json::json!({
-        "content": [
-            {
-                "type": "text",
-                "text": serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
-            },
-            {
-                "type": "resource",
-                "mimeType": "application/json",
-                "data": payload
+    Ok(serde_json::json!({ "content": render_tool_content(&payload) }))
+}
+
+fn render_tool_content(payload: &Value) -> Vec<Value> {
+    let mut content = vec![
+        serde_json::json!({
+            "type": "text",
+            "text": serde_json::to_string_pretty(payload).unwrap_or_else(|_| "{}".to_string())
+        }),
+        serde_json::json!({
+            "type": "resource",
+            "mimeType": "application/json",
+            "data": payload
+        }),
+    ];
+
+    if let Some(prompt) = payload.get("interactive_prompt") {
+        content.push(serde_json::json!({
+            "type": "resource",
+            "mimeType": "application/vnd.memovyn.actions+json",
+            "data": prompt
+        }));
+    }
+
+    if let Some(hints) = payload.get("reconciliation_hints") {
+        content.push(serde_json::json!({
+            "type": "resource",
+            "mimeType": "application/vnd.memovyn.hints+json",
+            "data": {
+                "hints": hints,
+                "actions": [
+                    { "id": "inspect", "label": "Inspect" },
+                    { "id": "reinforce", "label": "Reinforce" },
+                    { "id": "archive", "label": "Archive" }
+                ]
             }
-        ]
-    }))
+        }));
+    }
+
+    content
 }
 
 fn invalid_params(error: impl std::fmt::Display) -> JsonRpcError {

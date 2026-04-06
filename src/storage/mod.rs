@@ -343,11 +343,14 @@ impl Database {
             total_memories: summary.0 as usize,
             total_queries: summary.1 as u64,
             total_token_savings: summary.2 as u64,
+            estimated_tokens_per_recall: 0,
             session_queries: 0,
             session_token_savings: 0,
             conflict_count: summary.3 as usize,
             reinforced_memories: summary.4 as usize,
             penalized_memories: summary.5 as usize,
+            memory_health_score: 0,
+            learning_impact_score: 0,
             most_recalled: ranked_memories_query(
                 &connection,
                 project_id,
@@ -381,11 +384,27 @@ impl Database {
                 LIMIT 12
                 "#,
             )?,
+            most_impactful: ranked_memories_query(
+                &connection,
+                project_id,
+                r#"
+                SELECT memory_id, headline, summary, access_count,
+                       (reinforcement + success_score + (access_count * 0.15) - penalty - (failure_count * 0.4)) AS impact_score,
+                       success_score, failure_count
+                FROM memories
+                WHERE project_id = ?1
+                ORDER BY impact_score DESC, access_count DESC, updated_at DESC
+                LIMIT 12
+                "#,
+            )?,
             label_hotspots: Vec::new(),
             relation_hotspots: Vec::new(),
             conflict_heatmap: load_conflict_heatmap(&connection, project_id)?,
             growth: load_growth_series(&connection, project_id)?,
+            evolution_trend: load_evolution_trend(&connection, project_id)?,
+            agent_evolution_timeline: Vec::new(),
             behavior_insights: Vec::new(),
+            proactive_suggestions: Vec::new(),
         })
     }
 
@@ -403,6 +422,61 @@ impl Database {
             |row| Ok((row.get::<_, i64>(0)? as usize, row.get::<_, i64>(1)? as u64)),
         )?;
         Ok(snapshot)
+    }
+
+    pub fn archive_low_value_memories(
+        &self,
+        project_id: &str,
+        limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
+        // Strategic forgetting is intentionally conservative: only clearly low-signal
+        // memories with negligible usage and no active feedback history are archived.
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let transaction = connection.transaction()?;
+        let mut archived = {
+            let mut statement = transaction.prepare(
+                r#"
+                SELECT
+                    memory_id, project_id, kind, headline, summary, content, content_hash,
+                    taxonomy_json, metadata_json, created_at, updated_at, last_accessed_at,
+                    reinforcement, penalty, success_score, failure_count, repeated_mistake_count,
+                    reinforcement_decay, conflict_score, last_feedback_at, access_count, version
+                FROM memories
+                WHERE project_id = ?1
+                  AND access_count <= 1
+                  AND reinforcement <= 0.20
+                  AND success_score <= 0.25
+                  AND conflict_score <= 0.0
+                  AND penalty <= 0.15
+                  AND (last_feedback_at IS NULL)
+                ORDER BY created_at ASC
+                LIMIT ?2
+                "#,
+            )?;
+            let rows = statement.query_map(params![project_id, limit as i64], decode_memory_row)?;
+            let mut archived = Vec::new();
+            for row in rows {
+                let mut memory = row.map_err(MemovynError::from)?;
+                memory
+                    .metadata
+                    .extra
+                    .insert("archived".to_string(), "true".to_string());
+                memory
+                    .metadata
+                    .extra
+                    .insert("archive_reason".to_string(), "low_value".to_string());
+                memory.updated_at = OffsetDateTime::now_utc();
+                memory.version += 1;
+                archived.push(memory);
+            }
+            archived
+        };
+        for memory in &mut archived {
+            update_memory_tx(&transaction, memory)?;
+            insert_memory_version_tx(&transaction, memory)?;
+        }
+        transaction.commit()?;
+        Ok(archived)
     }
 
     pub fn get_memory(&self, memory_id: uuid::Uuid) -> Result<Option<MemoryRecord>> {
@@ -808,6 +882,32 @@ fn load_conflict_heatmap(
             memories: 0,
             conflicts: row.get::<_, i64>(1)? as usize,
             recalls: row.get::<_, i64>(2)? as usize,
+            tokens_saved: 0,
+        })
+    })?;
+    rows.collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(MemovynError::from)
+}
+
+fn load_evolution_trend(connection: &Connection, project_id: &str) -> Result<Vec<AnalyticsBucket>> {
+    let mut statement = connection.prepare_cached(
+        r#"
+        SELECT
+            substr(created_at, 1, 10) AS bucket,
+            SUM(CASE WHEN outcome IN ('success', 'partial') THEN 1 ELSE 0 END) AS successes,
+            SUM(CASE WHEN outcome IN ('failure', 'regression') THEN 1 ELSE 0 END) AS failures
+        FROM feedback_events
+        WHERE project_id = ?1
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        "#,
+    )?;
+    let rows = statement.query_map(params![project_id], |row| {
+        Ok(AnalyticsBucket {
+            bucket: row.get(0)?,
+            memories: row.get::<_, i64>(1)? as usize,
+            conflicts: row.get::<_, i64>(2)? as usize,
+            recalls: 0,
             tokens_saved: 0,
         })
     })?;
