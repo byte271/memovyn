@@ -430,7 +430,23 @@ function normalizeTaxonomy(input: Record<string, unknown>, fallback: MemoryRecor
     mainCategory: String(input.mainCategory ?? input.main_category ?? fallback.mainCategory),
     confidence: Number(input.confidence ?? fallback.confidence),
     multiLabels: asStringArray(input.multiLabels ?? input.multi_labels),
-    hierarchy: asArray(input.hierarchy),
+    hierarchy: asArray(input.hierarchy).map((item) => {
+      const value = item as Record<string, unknown>;
+      return {
+        id: String(value.id ?? ""),
+        name: String(value.name ?? ""),
+        level: Number(value.level ?? 0),
+        description: String(value.description ?? ""),
+        priority: Number(value.priority ?? 0),
+        confidence: Number(value.confidence ?? 0),
+        reinforcementWeight: Number(value.reinforcementWeight ?? value.reinforcement_weight ?? 0),
+        failureCount: Number(value.failureCount ?? value.failure_count ?? 0),
+        reinforcementDecay: Number(value.reinforcementDecay ?? value.reinforcement_decay ?? 1),
+        dependencies: asStringArray(value.dependencies),
+        relations: asStringArray(value.relations),
+        nodeType: String(value.nodeType ?? value.node_type ?? "")
+      };
+    }),
     dimensions: asArray(input.dimensions).map((item) => {
       const value = item as Record<string, unknown>;
       return {

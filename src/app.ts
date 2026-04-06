@@ -93,7 +93,7 @@ export class Memovyn {
       (hit) => hit.penalty > hit.reinforcement || hit.labels.some((label) => label.includes("regression"))
     );
 
-    const metadata = {
+    const metadata: MemoryRecord["metadata"] = {
       ...defaultMetadata(),
       ...(input.metadata ?? {}),
       tags: [...(input.metadata?.tags ?? []), "auto-reflection"],

@@ -352,6 +352,10 @@ export type ArchiveInput = {
   memoryId: MemoryId;
 };
 
+export type ArchiveResponse = {
+  memory: MemoryRecord;
+};
+
 export type TaxonomyEvolutionSnapshot = {
   priorLabels: string[];
   reinforcedLabels: string[];
