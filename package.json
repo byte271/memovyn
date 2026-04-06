@@ -33,7 +33,7 @@
     "start": "node dist/cli.mjs serve --bind 127.0.0.1:7761",
     "typecheck": "tsc --noEmit",
     "build": "tsup --config tsup.config.ts",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "tsx --test tests/all.test.ts",
     "package:bundle": "node scripts/build-release-bundle.mjs",
     "package:sea": "node -e \"console.log('SEA packaging is disabled on Node 20. Use npm run package:bundle instead.')\"",
     "release:check": "npm run typecheck && npm run test && npm run build"
