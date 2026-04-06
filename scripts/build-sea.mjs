@@ -10,9 +10,17 @@ const outputBlob = resolve("sea-prep.blob");
 const platform = process.platform;
 const executableName = platform === "win32" ? "memovyn.exe" : "memovyn";
 const releaseBinary = join(releaseDir, executableName);
+const postjectBinary = resolve(
+  "node_modules",
+  ".bin",
+  platform === "win32" ? "postject.cmd" : "postject"
+);
 
 if (!existsSync(join(dist, "cli.js"))) {
   throw new Error("Build output not found. Run `npm run build` first.");
+}
+if (!existsSync(postjectBinary)) {
+  throw new Error("postject binary not found. Run `npm install` before packaging.");
 }
 
 rmSync(releaseDir, { recursive: true, force: true });
@@ -38,20 +46,25 @@ execFileSync(process.execPath, ["--experimental-sea-config", seaConfig], {
 
 copyFileSync(process.execPath, releaseBinary);
 
-try {
-  execFileSync(
-    process.platform === "win32" ? "npx.cmd" : "npx",
-    [
-      "postject",
-      releaseBinary,
-      "NODE_SEA_BLOB",
-      outputBlob,
-      "--sentinel-fuse",
-      "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"
-    ],
-    { stdio: "inherit", cwd: root }
+execFileSync(
+  postjectBinary,
+  [
+    releaseBinary,
+    "NODE_SEA_BLOB",
+    outputBlob,
+    "--sentinel-fuse",
+    "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"
+  ],
+  { stdio: "inherit", cwd: root }
+);
+
+const helpOutput = execFileSync(releaseBinary, ["--help"], {
+  cwd: root,
+  encoding: "utf8"
+});
+
+if (!helpOutput.includes("Memovyn v0.2.0")) {
+  throw new Error(
+    "SEA packaging validation failed: packaged executable did not boot Memovyn correctly."
   );
-} catch (error) {
-  console.warn("SEA injection skipped or failed. Release binary may require manual packaging.");
-  console.warn(error instanceof Error ? error.message : String(error));
 }
