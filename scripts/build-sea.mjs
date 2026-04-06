@@ -16,7 +16,7 @@ const postjectBinary = resolve(
   platform === "win32" ? "postject.cmd" : "postject"
 );
 
-if (!existsSync(join(dist, "cli.js"))) {
+if (!existsSync(join(dist, "cli.mjs"))) {
   throw new Error("Build output not found. Run `npm run build` first.");
 }
 if (!existsSync(postjectBinary)) {
@@ -30,7 +30,7 @@ writeFileSync(
   seaConfig,
   JSON.stringify(
     {
-      main: "./dist/cli.js",
+      main: "./dist/cli.mjs",
       output: "./sea-prep.blob",
       disableExperimentalSEAWarning: true
     },

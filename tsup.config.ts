@@ -11,5 +11,10 @@ export default defineConfig({
   clean: true,
   outDir: "dist",
   minify: false,
-  treeshake: true
+  treeshake: true,
+  outExtension() {
+    return {
+      js: ".mjs"
+    };
+  }
 });
