@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Memovyn: local-first permanent memory for MCP-native coding agents"
 license = "MIT"
-repository = "https://github.com/example/memovyn"
+repository = "https://github.com/byte271/memovyn"
 
 [dependencies]
 aho-corasick = "1"
