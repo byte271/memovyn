@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -6,6 +6,7 @@ const root = resolve(".");
 const dist = resolve("dist");
 const releaseDir = resolve("release");
 const seaConfig = resolve("sea-config.json");
+const seaBootstrap = resolve("sea-bootstrap.cjs");
 const outputBlob = resolve("sea-prep.blob");
 const platform = process.platform;
 const executableName = platform === "win32" ? "memovyn.exe" : "memovyn";
@@ -31,12 +32,53 @@ rmSync(releaseDir, { recursive: true, force: true });
 mkdirSync(releaseDir, { recursive: true });
 
 writeFileSync(
+  seaBootstrap,
+  `
+const sea = require("node:sea");
+const { spawnSync } = require("node:child_process");
+const { execArgv, execPath, argv, env, exit } = require("node:process");
+
+if (!execArgv.includes("--experimental-sqlite") && env.MEMOVYN_SQLITE_BOOTSTRAPPED !== "1") {
+  const result = spawnSync(
+    execPath,
+    ["--experimental-sqlite", ...argv.slice(1)],
+    {
+      stdio: "inherit",
+      env: {
+        ...env,
+        MEMOVYN_SQLITE_BOOTSTRAPPED: "1"
+      }
+    }
+  );
+  exit(typeof result.status === "number" ? result.status : 1);
+}
+
+const source = sea.getAsset("cli.cjs", "utf8");
+const moduleRef = { exports: {} };
+const runner = new Function(
+  "require",
+  "module",
+  "exports",
+  "__filename",
+  "__dirname",
+  source + "\\n//# sourceURL=memovyn-cli.cjs"
+);
+runner(require, moduleRef, moduleRef.exports, "memovyn-cli.cjs", ".");
+`,
+  "utf8"
+);
+
+writeFileSync(
   seaConfig,
   JSON.stringify(
     {
-      main: "./dist/cli.cjs",
+      main: "./sea-bootstrap.cjs",
+      mainFormat: "commonjs",
       output: "./sea-prep.blob",
-      disableExperimentalSEAWarning: true
+      disableExperimentalSEAWarning: true,
+      assets: {
+        "cli.cjs": "./dist/cli.cjs"
+      }
     },
     null,
     2
@@ -72,3 +114,5 @@ if (!helpOutput.includes("Memovyn v0.2.0")) {
     "SEA packaging validation failed: packaged executable did not boot Memovyn correctly."
   );
 }
+
+unlinkSync(seaBootstrap);
