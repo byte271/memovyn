@@ -24,13 +24,13 @@ jobs:
         include:
           - os: linux
             runner: ubuntu-latest
-            artifact_name: memovyn-linux-x86_64
+            artifact_name: memovyn-linux-x86_64-bundle
           - os: macos
             runner: macos-latest
-            artifact_name: memovyn-macos-x86_64
+            artifact_name: memovyn-macos-x86_64-bundle
           - os: windows
             runner: windows-latest
-            artifact_name: memovyn-windows-x86_64
+            artifact_name: memovyn-windows-x86_64-bundle
 
     steps:
       - name: Checkout

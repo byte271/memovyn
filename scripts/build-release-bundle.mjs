@@ -40,3 +40,35 @@ writeFileSync(
     : "#!/usr/bin/env sh\nnode dist/cli.mjs \"$@\"\n",
   "utf8"
 );
+
+writeFileSync(
+  join(outputDir, "RUNNING_MEMOVYN.txt"),
+  platform === "win32"
+    ? [
+        "Memovyn Windows Bundle",
+        "",
+        "This package does not contain a standalone .exe.",
+        "It is a stable Node.js 20 release bundle.",
+        "",
+        "Requirements:",
+        "- Node.js 20 installed",
+        "",
+        "Run Memovyn with:",
+        "  memovyn.cmd --help",
+        "  memovyn.cmd serve --bind 127.0.0.1:7761",
+        "  memovyn.cmd mcp-stdio",
+        ""
+      ].join("\r\n")
+    : [
+        "Memovyn Release Bundle",
+        "",
+        "This package contains a launcher script plus runtime files.",
+        "",
+        "Run Memovyn with:",
+        "  ./memovyn --help",
+        "  ./memovyn serve --bind 127.0.0.1:7761",
+        "  ./memovyn mcp-stdio",
+        ""
+      ].join("\n"),
+  "utf8"
+);

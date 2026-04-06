@@ -96,18 +96,22 @@ Memovyn is built to solve that directly:
 
 ### Option 1: Use Release Binary
 
-Download the latest platform artifact from GitHub Releases and place the extracted `memovyn` executable on your `PATH`.
+Download the latest platform artifact from GitHub Releases and extract the release bundle.
 
-Linux / macOS:
+Linux / macOS bundles include a `memovyn` launcher script:
 ```bash
 chmod +x memovyn
 ./memovyn --help
 ```
 
-Windows PowerShell:
+Windows bundles include `memovyn.cmd`:
 ```powershell
-.\memovyn.exe --help
+.\memovyn.cmd --help
 ```
+
+Note:
+- The Node 20 release lane currently ships **stable bundles**, not native single-file executables.
+- Each bundle includes the launcher, runtime files, assets, docs, and dependencies needed to run Memovyn reliably.
 
 ### Option 2: Build From Source
 
@@ -369,6 +373,11 @@ Each runner:
 - prunes dev dependencies
 - packages a release bundle
 - uploads the release artifact
+
+Artifact naming:
+- `memovyn-linux-x86_64-bundle`
+- `memovyn-macos-x86_64-bundle`
+- `memovyn-windows-x86_64-bundle`
 
 ## Real-World Usage Recommendations
 
