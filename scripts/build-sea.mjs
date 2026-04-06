@@ -31,9 +31,10 @@ if (!existsSync(postjectBinary)) {
 rmSync(releaseDir, { recursive: true, force: true });
 mkdirSync(releaseDir, { recursive: true });
 
-writeFileSync(
-  seaBootstrap,
-  `
+try {
+  writeFileSync(
+    seaBootstrap,
+    `
 const sea = require("node:sea");
 const { spawnSync } = require("node:child_process");
 const { execArgv, execPath, argv, env, exit } = require("node:process");
@@ -74,56 +75,65 @@ const runner = new Function(
 );
 runner(require, moduleRef, moduleRef.exports, "memovyn-cli.cjs", ".");
 `,
-  "utf8"
-);
-
-writeFileSync(
-  seaConfig,
-  JSON.stringify(
-    {
-      main: "./sea-bootstrap.cjs",
-      mainFormat: "commonjs",
-      output: "./sea-prep.blob",
-      disableExperimentalSEAWarning: true,
-      assets: {
-        "cli.cjs": "./dist/cli.cjs",
-        "static/app.css": "./static/app.css",
-        "static/app.js": "./static/app.js"
-      }
-    },
-    null,
-    2
-  )
-);
-
-execFileSync(process.execPath, ["--experimental-sea-config", seaConfig], {
-  stdio: "inherit",
-  cwd: root
-});
-
-copyFileSync(process.execPath, releaseBinary);
-
-execFileSync(
-  postjectBinary,
-  [
-    releaseBinary,
-    "NODE_SEA_BLOB",
-    outputBlob,
-    "--sentinel-fuse",
-    "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"
-  ],
-  { stdio: "inherit", cwd: root }
-);
-
-const helpOutput = execFileSync(releaseBinary, ["--help"], {
-  cwd: root,
-  encoding: "utf8"
-});
-
-if (!helpOutput.includes("Memovyn v0.2.0")) {
-  throw new Error(
-    "SEA packaging validation failed: packaged executable did not boot Memovyn correctly."
+    "utf8"
   );
-}
 
-unlinkSync(seaBootstrap);
+  writeFileSync(
+    seaConfig,
+    JSON.stringify(
+      {
+        main: "./sea-bootstrap.cjs",
+        mainFormat: "commonjs",
+        output: "./sea-prep.blob",
+        disableExperimentalSEAWarning: true,
+        assets: {
+          "cli.cjs": "./dist/cli.cjs",
+          "static/app.css": "./static/app.css",
+          "static/app.js": "./static/app.js"
+        }
+      },
+      null,
+      2
+    )
+  );
+
+  execFileSync(process.execPath, ["--experimental-sea-config", seaConfig], {
+    stdio: "inherit",
+    cwd: root
+  });
+
+  copyFileSync(process.execPath, releaseBinary);
+
+  execFileSync(
+    postjectBinary,
+    [
+      releaseBinary,
+      "NODE_SEA_BLOB",
+      outputBlob,
+      "--sentinel-fuse",
+      "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"
+    ],
+    { stdio: "inherit", cwd: root }
+  );
+
+  if (platform === "darwin") {
+    execFileSync("codesign", ["--sign", "-", "--force", releaseBinary], {
+      stdio: "inherit",
+      cwd: root
+    });
+  }
+
+  const helpOutput = execFileSync(releaseBinary, ["--help"], {
+    cwd: root,
+    encoding: "utf8"
+  });
+
+  if (!helpOutput.includes("Memovyn v0.2.0")) {
+    throw new Error(
+      "SEA packaging validation failed: packaged executable did not boot Memovyn correctly."
+    );
+  }
+} finally {
+  if (existsSync(seaBootstrap)) unlinkSync(seaBootstrap);
+  if (existsSync(seaConfig)) unlinkSync(seaConfig);
+}
