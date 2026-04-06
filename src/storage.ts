@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { createRequire } from "node:module";
 import type {
   AnalyticsBucket,
   AnalyticsSnapshot,
@@ -614,10 +615,9 @@ function createDatabase(databasePath: string): any | null {
     return null;
   }
   try {
-    const dynamicRequire = (0, eval)("require") as (id: string) => { DatabaseSync: new (path: string) => any };
-    const sqliteModuleName = `node:${"sql"}ite`;
-    const sqlite = dynamicRequire(sqliteModuleName);
-    return new sqlite.DatabaseSync(databasePath);
+    const require = createRequire(import.meta.url);
+    const BetterSqlite = require("better-sqlite3") as new (path: string) => any;
+    return new BetterSqlite(databasePath);
   } catch {
     return null;
   }

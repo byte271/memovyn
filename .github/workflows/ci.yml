@@ -9,12 +9,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: node-ci-${{ github.workflow }}-${{ github.ref }}
+  group: node20-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build And Test (${{ matrix.os }})
+    name: Build, Test, and Package (${{ matrix.os }})
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -25,27 +25,40 @@ jobs:
           - os: linux
             runner: ubuntu-latest
             artifact_name: memovyn-linux-x86_64
-            artifact_path: release/memovyn
+            artifact_path: release/memovyn-linux-x86_64
           - os: macos
             runner: macos-latest
             artifact_name: memovyn-macos-x86_64
-            artifact_path: release/memovyn
+            artifact_path: release/memovyn-darwin-x86_64
           - os: windows
             runner: windows-latest
-            artifact_name: memovyn-windows-x86_64.exe
-            artifact_path: release/memovyn.exe
+            artifact_name: memovyn-windows-x86_64
+            artifact_path: release/memovyn-win32-x86_64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 24
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
+
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-node20-${{ hashFiles('package.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-node20-
+
+      - name: Show runtime versions
+        run: |
+          node -v
+          npm -v
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
@@ -53,14 +66,14 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Build bundle
+      - name: Build project
         run: npm run build
 
-      - name: Build single executable
-        run: npm run package:sea
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
 
-      - name: Verify packaged executable
-        run: npm run verify:sea
+      - name: Build release bundle
+        run: npm run package:bundle
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4

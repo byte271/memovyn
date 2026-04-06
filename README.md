@@ -1,6 +1,6 @@
 # Memovyn
 
-[![Node.js](https://img.shields.io/badge/Node.js-24-black?logo=node.js)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20-black?logo=node.js)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-white?logo=typescript)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-black)](./LICENSE)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-white)](./.github/workflows/ci.yml)
@@ -9,7 +9,7 @@
 
 Memovyn is a local-first, MCP-native permanent memory framework for coding agents. It gives Claude Code, Cursor, Codex, and any MCP-compatible tool a persistent project brain with structured taxonomy, explainable ranking, reinforcement learning, strategic forgetting, and high-speed recall.
 
-Memovyn v0.2 is the **Node.js 24 + TypeScript edition**. The project now runs on a modern Node runtime while preserving the same high-performance philosophy:
+Memovyn v0.2 is the **Node.js 20 + TypeScript edition**. The project now runs on a stable LTS Node runtime while preserving the same high-performance philosophy:
 - fearfully fast taxonomy and search
 - local-first SQLite persistence
 - reinforcement, priors, and avoid-pattern learning
@@ -112,7 +112,7 @@ Windows PowerShell:
 ### Option 2: Build From Source
 
 Requirements:
-- Node.js 24 LTS
+- Node.js 20 LTS
 - npm 11+
 
 Clone and install:
@@ -350,12 +350,7 @@ node --experimental-strip-types src/cli.ts search demo sqlite --limit 5
 
 ```bash
 npm run build
-```
-
-### Build Single Executable (SEA)
-
-```bash
-npm run package:sea
+npm run package:bundle
 ```
 
 ### Cross-Platform CI
@@ -366,12 +361,13 @@ GitHub Actions CI is defined in [ci.yml](/D:/memovyn/.github/workflows/ci.yml) a
 - Windows
 
 Each runner:
-- installs Node.js 24
+- installs Node.js 20
 - installs dependencies
 - runs typecheck
 - runs tests
 - builds the bundle
-- packages a single executable
+- prunes dev dependencies
+- packages a release bundle
 - uploads the release artifact
 
 ## Real-World Usage Recommendations

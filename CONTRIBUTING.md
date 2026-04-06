@@ -19,7 +19,7 @@ Memovyn is a local-first, MCP-native memory framework for coding agents. We opti
 ## Development Setup
 
 Requirements:
-- Node.js 24 LTS
+- Node.js 20 LTS
 - npm 11+
 
 Install dependencies:
@@ -32,7 +32,7 @@ Useful commands:
 npm run typecheck
 npm test
 npm run build
-npm run package:sea
+npm run package:bundle
 node --experimental-strip-types src/cli.ts serve --bind 127.0.0.1:7761
 ```
 
